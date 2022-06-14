@@ -5,9 +5,3 @@ metadata:
 data:
   config: |
     containerRuntimeExecutor: emissary
-    containerRuntimeExecutors:
-      - name: emissary
-        selector:
-          matchLabels:
-            workflows.argoproj.io/container-runtime-executor: emissary
-

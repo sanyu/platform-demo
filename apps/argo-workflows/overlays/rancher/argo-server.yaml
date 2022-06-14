@@ -10,7 +10,8 @@ spec:
           args:
             - server
             - --configmap=workflow-controller-configmap
-            - "--secure=false"
+            - --secure=false
+            - --auth-mode=server
           readinessProbe:
             httpGet:
               path: /

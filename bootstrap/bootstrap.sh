@@ -10,7 +10,7 @@ helm upgrade --install ingress-nginx ingress-nginx \
   --namespace ingress-nginx --create-namespace --wait
 
 
-# Install ArgoCD Ingress
+# Install ArgoCD
 helm upgrade --install argocd argo-cd \
     --repo https://argoproj.github.io/argo-helm \
     --namespace argocd --create-namespace \

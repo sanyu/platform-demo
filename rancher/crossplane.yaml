@@ -16,7 +16,7 @@ spec:
       values: |
         provider:
           packages:
-            - crossplane/provider-aws: v0.27.1
+            - crossplane/provider-aws:v0.27.1
   destination:
     namespace: crossplane-system
     server: https://kubernetes.default.svc

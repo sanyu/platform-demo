@@ -12,11 +12,6 @@ spec:
     chart: crossplane
     repoURL: https://charts.crossplane.io/stable
     targetRevision: "1.8.1"
-    helm:
-      values: |
-        provider:
-          packages:
-            - crossplane/provider-aws:v0.27.1
   destination:
     namespace: crossplane-system
     server: https://kubernetes.default.svc
@@ -27,3 +22,25 @@ spec:
       allowEmpty: true
     syncOptions:
     - CreateNamespace=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crossplane-providers
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform-demo
+  source:
+    path: apps/crossplane-providers
+    repoURL: https://github.com/sanyu/platform-demo
+    targetRevision: HEAD
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+      allowEmpty: true

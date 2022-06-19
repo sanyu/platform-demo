@@ -7,6 +7,7 @@ DOMAIN=local
 # Install Nginx Ingress
 helm upgrade --install ingress-nginx ingress-nginx \
   --repo https://kubernetes.github.io/ingress-nginx \
+  --version 4.1.4 \
   --namespace ingress-nginx --create-namespace --wait
 
 

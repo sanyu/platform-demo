@@ -10,17 +10,7 @@ helm upgrade --install ingress-nginx ingress-nginx \
   --version 4.1.4 \
   --namespace ingress-nginx --create-namespace --wait
 
-
-# Install ArgoCD
-helm upgrade --install argocd argo-cd \
-    --repo https://argoproj.github.io/argo-helm \
-    --namespace argocd --create-namespace \
-    --version 4.8.3 \
-    --set server.ingress.hosts="{argo-cd.$DOMAIN}" \
-    --set server.ingress.enabled=true \
-    --set server.extraArgs="{--insecure}" \
-    --set server.ingress.ingressClassName=nginx \
-    --set controller.args.appResyncPeriod=30
+kubectl apply -k ../apps/argo-cd/overlays/rancher
 
 kubectl --namespace argocd rollout status deployment argocd-server
 
@@ -31,5 +21,6 @@ ARGOCD_PASSWD=$(kubectl --namespace argocd \
 echo "ArgoCD is ready, you can login using admin:${ARGOCD_PASSWD}"
 
 open https://argo-cd.$DOMAIN
+
 
 kubectl apply -f argocd-bootstrap.yaml

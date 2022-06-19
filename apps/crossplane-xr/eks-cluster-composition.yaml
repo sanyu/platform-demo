@@ -9,292 +9,643 @@ spec:
   compositeTypeRef:
     apiVersion: demo.com/v1alpha1
     kind: XK8sCluster
+  writeConnectionSecretsToNamespace: crossplane-system
+
   patchSets:
-  - name: metadata
-    patches:
-    - fromFieldPath: metadata.labels
+    - name: metadata
+      patches:
+        - fromFieldPath: metadata.labels
+    - name: common-parameters
+      patches:
+        - fromFieldPath: "spec.parameters.region"
+          toFieldPath: "spec.forProvider.region"
+
   resources:
-  - name: ekscluster
-    base:
-      apiVersion: eks.aws.crossplane.io/v1beta1
-      kind: Cluster
-      spec:
-        forProvider:
-          region: ap-southeast-2
-          version: "1.22"
-          roleArnSelector:
-            matchControllerRef: true
-            matchLabels:
-              role: controlplane
-          resourcesVpcConfig:
-            endpointPrivateAccess: true
-            endpointPublicAccess: false
-            subnetIdSelector:
+    - name: ekscluster
+      base:
+        apiVersion: eks.aws.crossplane.io/v1beta1
+        kind: Cluster
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            version: "1.22"
+            roleArnSelector:
               matchControllerRef: true
-    patches:
-    - fromFieldPath: metadata.annotations[crossplane.io/external-name]
-      toFieldPath: metadata.annotations[crossplane.io/external-name]
-    - fromFieldPath: spec.parameters.version
-      toFieldPath: spec.forProvider.version
-    - fromFieldPath: metadata.uid
-      toFieldPath: spec.writeConnectionSecretToRef.name
-      transforms:
-        - type: string
-          string:
-            fmt: "%s-ekscluster"
-    - type: ToCompositeFieldPath
-      fromFieldPath: metadata.annotations[crossplane.io/external-name]
-      toFieldPath: status.clusterName
-    - type: ToCompositeFieldPath
-      fromFieldPath: status.atProvider.status
-      toFieldPath: status.controlPlaneStatus
-    - fromFieldPath: spec.writeConnectionSecretToRef.namespace
-      toFieldPath: spec.writeConnectionSecretToRef.namespace
-    readinessChecks:
-    - type: MatchString
-      fieldPath: status.atProvider.status
-      matchString: ACTIVE
-    connectionDetails:
-      - fromConnectionSecretKey: kubeconfig
-  - name: eksnodegroup
-    base:
-      apiVersion: eks.aws.crossplane.io/v1alpha1
-      kind: NodeGroup
-      spec:
-        forProvider:
-          region: ap-southeast-2
-          clusterNameSelector:
-            matchControllerRef: true
-          nodeRoleSelector:
-            matchControllerRef: true
-            matchLabels:
-              role: nodegroup
-          subnetSelector:
-            matchLabels:
-              access: private
-          scalingConfig:
-            minSize: 1
-            maxSize: 5
-            desiredSize: 1
-          instanceTypes:
-            - t3.medium
-    patches:
-    - type: ToCompositeFieldPath
-      fromFieldPath: status.atProvider.status
-      toFieldPath: status.nodePoolStatus
-    readinessChecks:
-    - type: MatchString
-      fieldPath: status.atProvider.status
-      matchString: ACTIVE
-  - name: iamrole-controlplane
-    base:
-      apiVersion: iam.aws.crossplane.io/v1beta1
-      kind: Role
-      metadata:
-        labels:
-          role: controlplane
-      spec:
-        forProvider:
-          assumeRolePolicyDocument: |
-            {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Principal": {
-                          "Service": [
-                              "eks.amazonaws.com"
-                          ]
-                      },
-                      "Action": [
-                          "sts:AssumeRole"
-                      ]
-                  }
-              ]
-            }
-  - name: iamrole-nodegroup
-    base:
-      apiVersion: iam.aws.crossplane.io/v1beta1
-      kind: Role
-      metadata:
-        labels:
-          role: nodegroup
-      spec:
-        forProvider:
-          assumeRolePolicyDocument: |
-            {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Principal": {
-                          "Service": [
-                              "ec2.amazonaws.com"
-                          ]
-                      },
-                      "Action": [
-                          "sts:AssumeRole"
-                      ]
-                  }
-              ]
-            }
-  - name: iamattachment-controlplane
-    base:
-      apiVersion: iam.aws.crossplane.io/v1beta1
-      kind: RolePolicyAttachment
-      spec:
-        forProvider:
-          policyArn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
-          roleNameSelector:
-            matchControllerRef: true
-            matchLabels:
-              role: controlplane
-  - name: iamattachment-service
-    base:
-      apiVersion: iam.aws.crossplane.io/v1beta1
-      kind: RolePolicyAttachment
-      spec:
-        forProvider:
-          policyArn: arn:aws:iam::aws:policy/AmazonEKSServicePolicy
-          roleNameSelector:
-            matchControllerRef: true
-            matchLabels:
-              role: controlplane
-  - name: iamattachment-worker
-    base:
-      apiVersion: iam.aws.crossplane.io/v1beta1
-      kind: RolePolicyAttachment
-      spec:
-        forProvider:
-          policyArn: arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
-          roleNameSelector:
-            matchControllerRef: true
-            matchLabels:
-              role: nodegroup
-  - name: iamattachment-cni
-    base:
-      apiVersion: iam.aws.crossplane.io/v1beta1
-      kind: RolePolicyAttachment
-      spec:
-        forProvider:
-          policyArn: arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
-          roleNameSelector:
-            matchControllerRef: true
-            matchLabels:
-              role: nodegroup
-  - name: iamattachment-registry
-    base:
-      apiVersion: iam.aws.crossplane.io/v1beta1
-      kind: RolePolicyAttachment
-      spec:
-        forProvider:
-          policyArn: arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-          roleNameSelector:
-            matchControllerRef: true
-            matchLabels:
-              role: nodegroup
-  - name: vpc
-    base:
-      apiVersion: ec2.aws.crossplane.io/v1beta1
-      kind: VPC
-      spec:
-        forProvider:
-          region: ap-southeast-2
-          cidrBlock: 10.0.0.0/16
-          tags:
-          - key: Name
-            value: demo
-          - key: kubernetes.io/cluster/demo
-            value: shared
-  - name: sg-nodes
-    base:
-      apiVersion: ec2.aws.crossplane.io/v1beta1
-      kind: SecurityGroup
-      spec:
-        forProvider:
-          description: Cluster communication with worker nodes
-          groupName: demo
-          region: ap-southeast-2
-          vpcIdSelector:
-            matchControllerRef: true
-          egress:
-          - fromPort: 0
-            toPort: 0
-            ipProtocol: "-1"
-            ipRanges:
-            - cidrIp: "0.0.0.0/0"
-  - name: nodes-subnets-2a
-    base:
-      apiVersion: ec2.aws.crossplane.io/v1beta1
-      kind: Subnet
-      metadata:
-        labels:
-          zone: ap-southeast-2a
-          access: private
-      spec:
-        forProvider:
-          region: ap-southeast-2
-          availabilityZone: ap-southeast-2a
-          cidrBlock: 10.0.0.0/24
-          vpcIdSelector:
-            matchControllerRef: true
-          mapPublicIPOnLaunch: true
-          tags:
-            - key: Name
-              value: demo
-            - key: kubernetes.io/cluster/demo
-              value: shared
-  - name: nodes-subnets-2b
-    base:
-      apiVersion: ec2.aws.crossplane.io/v1beta1
-      kind: Subnet
-      metadata:
-        labels:
-          zone: ap-southeast-2b
-          access: private
-      spec:
-        forProvider:
-          region: ap-southeast-2
-          availabilityZone: ap-southeast-2b
-          cidrBlock: 10.0.1.0/24
-          vpcIdSelector:
-            matchControllerRef: true
-          mapPublicIPOnLaunch: true
-          tags:
-            - key: Name
-              value: demo
-            - key: kubernetes.io/cluster/demo
-              value: shared
-  - name: gateway
-    base:
-      apiVersion: ec2.aws.crossplane.io/v1beta1
-      kind: InternetGateway
-      spec:
-        forProvider:
-          region: ap-southeast-2
-          vpcIdSelector:
-            matchControllerRef: true
-  - name: routetable
-    base:
-      apiVersion: ec2.aws.crossplane.io/v1beta1
-      kind: RouteTable
-      spec:
-        forProvider:
-          region: ap-southeast-2
-          vpcIdSelector:
-            matchControllerRef: true
-          routes:
-            - destinationCidrBlock: 0.0.0.0/0
-              gatewayIdSelector:
-                matchControllerRef: true
-          associations:
-            - subnetIdSelector:
+              matchLabels:
+                role: controlplane
+            resourcesVpcConfig:
+              endpointPrivateAccess: true
+              endpointPublicAccess: true
+              publicAccessCidrs:
+                - "0.0.0.0/0"
+              subnetIdSelector:
                 matchControllerRef: true
                 matchLabels:
-                  zone: ap-southeast-2a
-                  access: private
-            - subnetIdSelector:
-                matchControllerRef: true
-                matchLabels:
-                  zone: ap-southeast-2b
-                  access: private
+                  type: subnet
+      patches:
+      - fromFieldPath: spec.parameters.sourceCidrs
+        toFieldPath: spec.forProvider.resourcesVpcConfig.publicAccessCidrs
+      - fromFieldPath: metadata.annotations[crossplane.io/external-name]
+        toFieldPath: metadata.annotations[crossplane.io/external-name]
+      - fromFieldPath: spec.parameters.version
+        toFieldPath: spec.forProvider.version
+      - fromFieldPath: spec.writeConnectionSecretToRef.namespace
+        toFieldPath: spec.writeConnectionSecretToRef.namespace
+      - fromFieldPath: metadata.uid
+        toFieldPath: spec.writeConnectionSecretToRef.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-ekscluster"
+      - type: ToCompositeFieldPath
+        fromFieldPath: metadata.annotations[crossplane.io/external-name]
+        toFieldPath: status.clusterName
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.status
+        toFieldPath: status.controlPlaneStatus
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.status
+        matchString: ACTIVE
+      connectionDetails:
+        - fromConnectionSecretKey: kubeconfig
+
+    - name: eksnodegroup
+      base:
+        apiVersion: eks.aws.crossplane.io/v1alpha1
+        kind: NodeGroup
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            clusterNameSelector:
+              matchControllerRef: true
+            nodeRoleSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+            subnetSelector:
+              matchControllerRef: true
+              matchLabels:
+                type: subnet
+                access: private
+            scalingConfig:
+              minSize: 1
+              maxSize: 5
+              desiredSize: 1
+            instanceTypes:
+              - t3.medium
+      patches:
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.status
+        toFieldPath: status.nodePoolStatus
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.status
+        matchString: ACTIVE
+
+    - name: iamrole-controlplane
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: Role
+        metadata:
+          labels:
+            role: controlplane
+        spec:
+          forProvider:
+            assumeRolePolicyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "eks.amazonaws.com"
+                            ]
+                        },
+                        "Action": [
+                            "sts:AssumeRole"
+                        ]
+                    }
+                ]
+              }
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-controlplane-role"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: iamrole-nodegroup
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: Role
+        metadata:
+          labels:
+            role: nodegroup
+        spec:
+          forProvider:
+            assumeRolePolicyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "ec2.amazonaws.com"
+                            ]
+                        },
+                        "Action": [
+                            "sts:AssumeRole"
+                        ]
+                    }
+                ]
+              }
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-nodegroup-role"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: iamattachment-controlplane
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: controlplane
+
+    - name: iamattachment-service
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: controlplane
+
+    - name: iamattachment-worker
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+
+    - name: iamattachment-cni
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+
+    - name: iamattachment-registry
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+
+    - name: vpc
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: VPC
+        metadata:
+          labels:
+            type: vpc
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            enableDnsSupport: true
+            enableDnsHostNames: true
+            cidrBlock: 10.0.0.0/16
+            tags:
+            - key: Name
+            - key: kubernetes.io/cluster/demo
+              value: shared
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: sg-nodes
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: SecurityGroup
+        spec:
+          forProvider:
+            description: Cluster communication with worker nodes
+            groupName: demo
+            region: ap-southeast-2
+            vpcIdSelector:
+              matchControllerRef: true
+            egress:
+            - fromPort: null
+              toPort: null
+              ipProtocol: "-1"
+              ipRanges:
+              - cidrIp: "0.0.0.0/0"
+
+    - name: nodes-subnets-2a
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            zone: ap-southeast-2a
+            access: private
+            type: subnet
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            availabilityZone: ap-southeast-2a
+            cidrBlock: 10.0.0.0/24
+            vpcIdSelector:
+              matchControllerRef: true
+            mapPublicIPOnLaunch: false
+            tags:
+              - key: Name
+              - key: access
+                value: private
+              - key: kubernetes.io/cluster/demo
+                value: shared
+              - key: kubernetes.io/role/internal-elb
+                value: "1"
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-private-2a"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: nodes-subnets-2b
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            zone: ap-southeast-2b
+            access: private
+            type: subnet
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            availabilityZone: ap-southeast-2b
+            cidrBlock: 10.0.1.0/24
+            vpcIdSelector:
+              matchControllerRef: true
+            mapPublicIPOnLaunch: false
+            tags:
+              - key: Name
+              - key: access
+                value: private
+              - key: kubernetes.io/cluster/demo
+                value: shared
+              - key: kubernetes.io/role/internal-elb
+                value: "1"
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-private-2b"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: nodes-subnets-public-2a
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            zone: ap-southeast-2a
+            access: public
+            type: subnet
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            availabilityZone: ap-southeast-2a
+            cidrBlock: 10.0.200.0/24
+            vpcIdSelector:
+              matchControllerRef: true
+            mapPublicIPOnLaunch: false
+            tags:
+              - key: Name
+              - key: access
+                value: public
+              - key: kubernetes.io/cluster/demo
+                value: shared
+              - key: kubernetes.io/role/elb
+                value: "1"
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-public-2a"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: nodes-subnets-public-2b
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            zone: ap-southeast-2b
+            access: public
+            type: subnet
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            availabilityZone: ap-southeast-2b
+            cidrBlock: 10.0.201.0/24
+            vpcIdSelector:
+              matchControllerRef: true
+            mapPublicIPOnLaunch: false
+            tags:
+              - key: Name
+              - key: access
+                value: public
+              - key: kubernetes.io/cluster/demo
+                value: shared
+              - key: kubernetes.io/role/elb
+                value: "1"
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-public-2b"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: gateway
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: InternetGateway
+        metadata:
+          labels:
+            type: igw
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            vpcIdSelector:
+              matchControllerRef: true
+
+    - name: elastic-ip-1
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Address
+        metadata:
+          labels:
+            type: eip-1
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            domain: vpc
+
+    - name: elastic-ip-2
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Address
+        metadata:
+          labels:
+            type: eip-2
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            domain: vpc
+
+    - name: natgateway-1
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: NATGateway
+        metadata:
+          labels:
+            type: natgw-1
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            allocationIdSelector:
+              matchLabels:
+                type: eip-1
+            vpcIdSelector:
+              matchControllerRef: true
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                access: public
+                zone: ap-southeast-2a
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-nat-gateway-1"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: natgateway-2
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: NATGateway
+        metadata:
+          labels:
+            type: natgw-2
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            allocationIdSelector:
+              matchLabels:
+                type: eip-2
+            vpcIdSelector:
+              matchControllerRef: true
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                access: public
+                zone: ap-southeast-2b
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-nat-gateway-2"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: routetable-public
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: RouteTable
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            vpcIdSelector:
+              matchControllerRef: true
+            routes:
+              - destinationCidrBlock: 0.0.0.0/0
+                gatewayIdSelector:
+                  matchLabels:
+                    type: igw
+            associations:
+              - subnetIdSelector:
+                  matchLabels:
+                    type: subnet
+                    zone: ap-southeast-2a
+                    access: public
+              - subnetIdSelector:
+                  matchLabels:
+                    type: subnet
+                    zone: ap-southeast-2b
+                    access: public
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-public-route-table"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: routetable-private-1
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: RouteTable
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            vpcIdSelector:
+              matchControllerRef: true
+            routes:
+              - destinationCidrBlock: 0.0.0.0/0
+                natGatewayIdSelector:
+                  matchLabels:
+                    type: natgw-1
+            associations:
+              - subnetIdSelector:
+                  matchLabels:
+                    type: subnet
+                    zone: ap-southeast-2a
+                    access: private
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-private-route-table-1"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: routetable-private-2
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: RouteTable
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            vpcIdSelector:
+              matchControllerRef: true
+            routes:
+              - destinationCidrBlock: 0.0.0.0/0
+                natGatewayIdSelector:
+                  matchLabels:
+                    type: natgw-2
+            associations:
+              - subnetIdSelector:
+                  matchLabels:
+                    type: subnet
+                    zone: ap-southeast-2b
+                    access: private
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-private-route-table-2"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required

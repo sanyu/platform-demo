@@ -31,6 +31,13 @@ spec:
                   version:
                     description: The Kubernetes version for the cluster.
                     type: string
+                  sourceCidrs:
+                    description: CIDR block allowed to access the public API server endpoint
+                    type: array
+                    items:
+                      type: string
+                required:
+                - sourceCidrs
           status:
             type: object
             properties:

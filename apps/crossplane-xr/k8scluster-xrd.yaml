@@ -25,6 +25,9 @@ spec:
           spec:
             type: object
             properties:
+              id:
+                type: string
+                description: ID of this Cluster that other objects will use to refer to it.
               parameters:
                 type: object
                 properties:
@@ -38,6 +41,9 @@ spec:
                       type: string
                 required:
                 - sourceCidrs
+            required:
+              - id
+              - parameters
           status:
             type: object
             properties:

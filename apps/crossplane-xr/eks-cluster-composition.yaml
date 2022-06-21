@@ -43,26 +43,28 @@ spec:
                 matchLabels:
                   type: subnet
       patches:
-      - fromFieldPath: spec.parameters.sourceCidrs
-        toFieldPath: spec.forProvider.resourcesVpcConfig.publicAccessCidrs
-      - fromFieldPath: metadata.annotations[crossplane.io/external-name]
-        toFieldPath: metadata.annotations[crossplane.io/external-name]
-      - fromFieldPath: spec.parameters.version
-        toFieldPath: spec.forProvider.version
-      - fromFieldPath: spec.writeConnectionSecretToRef.namespace
-        toFieldPath: spec.writeConnectionSecretToRef.namespace
-      - fromFieldPath: metadata.uid
-        toFieldPath: spec.writeConnectionSecretToRef.name
-        transforms:
-          - type: string
-            string:
-              fmt: "%s-ekscluster"
-      - type: ToCompositeFieldPath
-        fromFieldPath: metadata.annotations[crossplane.io/external-name]
-        toFieldPath: status.clusterName
-      - type: ToCompositeFieldPath
-        fromFieldPath: status.atProvider.status
-        toFieldPath: status.controlPlaneStatus
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+        - fromFieldPath: spec.parameters.sourceCidrs
+          toFieldPath: spec.forProvider.resourcesVpcConfig.publicAccessCidrs
+        - fromFieldPath: metadata.annotations[crossplane.io/external-name]
+          toFieldPath: metadata.annotations[crossplane.io/external-name]
+        - fromFieldPath: spec.parameters.version
+          toFieldPath: spec.forProvider.version
+        - fromFieldPath: spec.writeConnectionSecretToRef.namespace
+          toFieldPath: spec.writeConnectionSecretToRef.namespace
+        - fromFieldPath: metadata.uid
+          toFieldPath: spec.writeConnectionSecretToRef.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-ekscluster"
+        - type: ToCompositeFieldPath
+          fromFieldPath: spec.id
+          toFieldPath: status.clusterName
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.status
+          toFieldPath: status.controlPlaneStatus
       readinessChecks:
       - type: MatchString
         fieldPath: status.atProvider.status
@@ -309,10 +311,9 @@ spec:
             mapPublicIPOnLaunch: false
             tags:
               - key: Name
+              - value: shared
               - key: access
                 value: private
-              - key: kubernetes.io/cluster/demo
-                value: shared
               - key: kubernetes.io/role/internal-elb
                 value: "1"
       patches:
@@ -324,6 +325,14 @@ spec:
             string:
               fmt: "%s-private-2a"
           toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.tags[1].key
+          transforms:
+            - type: string
+              string:
+                fmt: "kubernetes.io/cluster/%s"
           policy:
             fromFieldPath: Required
 
@@ -346,10 +355,9 @@ spec:
             mapPublicIPOnLaunch: false
             tags:
               - key: Name
+              - value: shared
               - key: access
                 value: private
-              - key: kubernetes.io/cluster/demo
-                value: shared
               - key: kubernetes.io/role/internal-elb
                 value: "1"
       patches:
@@ -361,6 +369,14 @@ spec:
             string:
               fmt: "%s-private-2b"
           toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.tags[1].key
+          transforms:
+            - type: string
+              string:
+                fmt: "kubernetes.io/cluster/%s"
           policy:
             fromFieldPath: Required
 
@@ -385,8 +401,6 @@ spec:
               - key: Name
               - key: access
                 value: public
-              - key: kubernetes.io/cluster/demo
-                value: shared
               - key: kubernetes.io/role/elb
                 value: "1"
       patches:
@@ -422,8 +436,6 @@ spec:
               - key: Name
               - key: access
                 value: public
-              - key: kubernetes.io/cluster/demo
-                value: shared
               - key: kubernetes.io/role/elb
                 value: "1"
       patches:
@@ -647,5 +659,85 @@ spec:
             string:
               fmt: "%s-private-route-table-2"
           toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: helm
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: ProviderConfig
+        spec:
+          credentials:
+            source: Secret
+            secretRef:
+              key: kubeconfig
+      patches:
+      - fromFieldPath: spec.id
+        toFieldPath: metadata.name
+      - fromFieldPath: spec.writeConnectionSecretToRef.namespace
+        toFieldPath: spec.credentials.secretRef.namespace
+      - fromFieldPath: metadata.uid
+        toFieldPath: spec.credentials.secretRef.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-ekscluster"
+      readinessChecks:
+        - type: None
+
+    - name: argocd
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: argocd
+            chart:
+              name: argo-cd
+              repository: https://argoproj.github.io/argo-helm
+              version: "4.9.4"
+            values:
+              controller:
+                args:
+                  appResyncPeriod: 30
+              server:
+                extraArgs:
+                  - "--insecure"
+                ingress:
+                  enabled: true
+                  hosts:
+                    - ingress.local
+                  ingressClassName: nginx
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.values.server.ingress.hosts[0]
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-ekscluster.local"
+          policy:
+            fromFieldPath: Required
+
+    - name: nginx
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: ingress-nginx
+            chart:
+              name: ingress-nginx
+              repository: https://kubernetes.github.io/ingress-nginx
+              version: "4.1.4"
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
           policy:
             fromFieldPath: Required

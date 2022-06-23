@@ -798,6 +798,21 @@ spec:
         #   policy:
         #     fromFieldPath: Required
 
+    - name: bootstrap
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: argocd
+            chart:
+              name: bootstrap
+              repository:  https://sanyu.github.io/helm-charts/
+              version: "0.0.2"
+            values:
+              bootstrapPath: eks
+
     - name: nginx
       base:
         apiVersion: helm.crossplane.io/v1beta1
@@ -814,7 +829,7 @@ spec:
               controller:
                 service:
                   loadBalancerSourceRanges:
-                    - ingress.local
+                    - "0.0.0.0/0"
                   annotations:
                     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
                     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
@@ -823,8 +838,6 @@ spec:
         - fromFieldPath: spec.parameters.sourceCidrs
           toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
           type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
 
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name

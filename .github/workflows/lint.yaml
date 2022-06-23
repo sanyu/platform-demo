@@ -1,0 +1,19 @@
+name: Validate YAML
+
+on:
+  - push
+  - pull_request
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Kubeval
+        uses: stefanprodan/kube-tools@v1.7.0
+        with:
+          kubeval: v0.16.1
+          command: |
+            kubeval -d rancher --strict --ignore-missing-schemas
+            kubeval -d eks --strict --ignore-missing-schemas

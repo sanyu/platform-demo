@@ -45,26 +45,47 @@ spec:
       patches:
         - fromFieldPath: spec.id
           toFieldPath: metadata.name
+          type: FromCompositeFieldPath
+
         - fromFieldPath: spec.parameters.sourceCidrs
           toFieldPath: spec.forProvider.resourcesVpcConfig.publicAccessCidrs
+          type: FromCompositeFieldPath
+
         - fromFieldPath: metadata.annotations[crossplane.io/external-name]
           toFieldPath: metadata.annotations[crossplane.io/external-name]
+          type: FromCompositeFieldPath
+
         - fromFieldPath: spec.parameters.version
           toFieldPath: spec.forProvider.version
+          type: FromCompositeFieldPath
+
         - fromFieldPath: spec.writeConnectionSecretToRef.namespace
           toFieldPath: spec.writeConnectionSecretToRef.namespace
+          type: FromCompositeFieldPath
+
         - fromFieldPath: metadata.uid
           toFieldPath: spec.writeConnectionSecretToRef.name
           transforms:
             - type: string
               string:
                 fmt: "%s-ekscluster"
+                type: Format
+          type: FromCompositeFieldPath
+
         - type: ToCompositeFieldPath
           fromFieldPath: spec.id
           toFieldPath: status.clusterName
+
         - type: ToCompositeFieldPath
           fromFieldPath: status.atProvider.status
           toFieldPath: status.controlPlaneStatus
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.identity.oidc.issuer
+          toFieldPath: status.eks.oidc
+          policy:
+            fromFieldPath: Optional
+
       readinessChecks:
       - type: MatchString
         fieldPath: status.atProvider.status
@@ -329,10 +350,12 @@ spec:
             fromFieldPath: Required
         - fromFieldPath: spec.id
           toFieldPath: spec.forProvider.tags[1].key
+          type: FromCompositeFieldPath
           transforms:
             - type: string
               string:
                 fmt: "kubernetes.io/cluster/%s"
+                type: Format
           policy:
             fromFieldPath: Required
 
@@ -377,6 +400,8 @@ spec:
             - type: string
               string:
                 fmt: "kubernetes.io/cluster/%s"
+                type: Format
+          type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
 
@@ -661,6 +686,22 @@ spec:
           toFieldPath: spec.forProvider.tags[0].value
           policy:
             fromFieldPath: Required
+    - base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: OpenIDConnectProvider
+        spec:
+          forProvider:
+            clientIDList:
+              - sts.amazonaws.com
+            thumbprintList:
+              - "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
+      name: oidcProvider
+      patches:
+        - fromFieldPath: status.eks.oidc
+          toFieldPath: spec.forProvider.url
+          policy:
+            fromFieldPath: Required
+          type: FromCompositeFieldPath
 
     - name: helm
       base:
@@ -672,16 +713,22 @@ spec:
             secretRef:
               key: kubeconfig
       patches:
-      - fromFieldPath: spec.id
-        toFieldPath: metadata.name
-      - fromFieldPath: spec.writeConnectionSecretToRef.namespace
-        toFieldPath: spec.credentials.secretRef.namespace
-      - fromFieldPath: metadata.uid
-        toFieldPath: spec.credentials.secretRef.name
-        transforms:
-          - type: string
-            string:
-              fmt: "%s-ekscluster"
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: spec.writeConnectionSecretToRef.namespace
+          toFieldPath: spec.credentials.secretRef.namespace
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: metadata.uid
+          toFieldPath: spec.credentials.secretRef.name
+          type: FromCompositeFieldPath
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-ekscluster"
+                type: Format
       readinessChecks:
         - type: None
 
@@ -709,20 +756,47 @@ spec:
                   hosts:
                     - ingress.local
                   ingressClassName: nginx
+                  annotations:
+                    ingress.kubernetes.io/ssl-redirect: "true"
+                    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+                    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+                  #   cert-manager.io/cluster-issuer: letsencrypt
+                  # tls:
+                  #     - hosts:
+                  #         - ingress.local
+                  #       secretName: letsencrypt
+
       patches:
+
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
 
-        - fromFieldPath: spec.id
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.id
+              - fromFieldPath: spec.parameters.domain
+            strategy: string
+            string:
+              fmt: "%s-argo.%s"
           toFieldPath: spec.forProvider.values.server.ingress.hosts[0]
-          transforms:
-            - type: string
-              string:
-                fmt: "%s-ekscluster.local"
           policy:
             fromFieldPath: Required
+
+        # - type: CombineFromComposite
+        #   combine:
+        #     variables:
+        #       - fromFieldPath: spec.id
+        #       - fromFieldPath: spec.parameters.domain
+        #     strategy: string
+        #     string:
+        #       fmt: "%s-argo.%s"
+        #   toFieldPath: spec.forProvider.values.server.ingress.tls[0].hosts[0]
+        #   policy:
+        #     fromFieldPath: Required
 
     - name: nginx
       base:
@@ -736,8 +810,24 @@ spec:
               name: ingress-nginx
               repository: https://kubernetes.github.io/ingress-nginx
               version: "4.1.4"
+            values:
+              controller:
+                service:
+                  loadBalancerSourceRanges:
+                    - ingress.local
+                  annotations:
+                    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+                    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
+                    service.beta.kubernetes.io/aws-load-balancer-type: nlb
       patches:
+        - fromFieldPath: spec.parameters.sourceCidrs
+          toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required

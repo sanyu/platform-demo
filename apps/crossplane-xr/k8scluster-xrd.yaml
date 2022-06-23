@@ -34,6 +34,12 @@ spec:
                   version:
                     description: The Kubernetes version for the cluster.
                     type: string
+                  domain:
+                    description: Route53 domain
+                    type: string
+                  email:
+                    description: Email used for cert manager's ClusterIssuer
+                    type: string
                   sourceCidrs:
                     description: CIDR block allowed to access the public API server endpoint
                     type: array
@@ -56,6 +62,10 @@ spec:
               nodePoolStatus:
                 description: The status of the node pool
                 type: string
+              eks:
+                description: Freeform field containing status information for eks
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
     additionalPrinterColumns:
     - name: clusterName
       type: string

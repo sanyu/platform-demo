@@ -824,6 +824,7 @@ spec:
               version: "0.0.2"
             values:
               bootstrapPath: eks
+      patches:
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
           type: FromCompositeFieldPath

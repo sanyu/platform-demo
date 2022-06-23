@@ -45,8 +45,6 @@ spec:
                     type: array
                     items:
                       type: string
-                required:
-                - sourceCidrs
             required:
               - id
               - parameters

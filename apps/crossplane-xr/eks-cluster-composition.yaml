@@ -819,9 +819,9 @@ spec:
           forProvider:
             namespace: argocd
             chart:
-              name: bootstrap
+              name: bootstrap-cluster
               repository:  https://sanyu.github.io/helm-charts/
-              version: "0.0.2"
+              version: "0.2.0"
             values:
               bootstrapPath: eks
       patches:

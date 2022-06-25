@@ -1,0 +1,63 @@
+---
+# Composite Resource (XRs)
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xiamroleforserviceaccounts.iam.demo.com
+spec:
+  group: iam.demo.com
+  names:
+    kind: XIamRoleForServiceAccount
+    plural: xiamroleforserviceaccounts
+    shortNames:
+      - xirsa
+  claimNames:
+    kind: IamRoleForServiceAccount
+    plural: iamroleforserviceaccounts
+    shortNames:
+      - irsa
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    accountID:
+                      type: string
+                    namespace:
+                      type: string
+                    serviceAccountName:
+                      type: string
+                    policyDocument:
+                      type: string
+                    clusterName:
+                      type: string
+                    OIDCProvider:
+                      type: string
+                  required:
+                    - accountID
+                    - serviceAccountName
+                    - namespace
+                    - policyDocument
+                    - clusterName
+                    - OIDCProvider
+              required:
+                - parameters
+            status:
+              type: object
+              properties:
+                roleArn:
+                  description: The role ARN
+                  type: string
+      additionalPrinterColumns:
+        - name: roleArn
+          type: string
+          jsonPath: ".status.roleArn"

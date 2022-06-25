@@ -1,0 +1,145 @@
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: irsa
+  labels:
+    crossplane.io/xrd: xiamroleforserviceaccounts.iam.demo.com
+spec:
+  compositeTypeRef:
+    apiVersion: iam.demo.com/v1alpha1
+    kind: XIamRoleForServiceAccount
+  resources:
+    - name: irsa-role
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: Role
+        metadata:
+          annotations:
+            crossplane.io/external-name: name
+          labels:
+            role: irsa
+        spec:
+          forProvider:
+            assumeRolePolicyDocument: {}
+      patches:
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.arn
+          toFieldPath: status.roleArn
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.serviceAccountName
+              - fromFieldPath: spec.parameters.clusterName
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: "metadata.annotations[crossplane.io/external-name]"
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.serviceAccountName
+              - fromFieldPath: spec.parameters.clusterName
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: "metadata.labels[role]"
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.accountID
+              - fromFieldPath: spec.parameters.OIDCProvider
+              - fromFieldPath: spec.parameters.OIDCProvider
+              - fromFieldPath: spec.parameters.namespace
+              - fromFieldPath: spec.parameters.serviceAccountName
+            strategy: string
+            string:
+              fmt: |
+                {
+                  "Version": "2012-10-17",
+                  "Statement": [
+                    {
+                      "Effect": "Allow",
+                      "Principal": {
+                        "Federated": "arn:aws:iam::%s:oidc-provider/%s"
+                      },
+                      "Action": "sts:AssumeRoleWithWebIdentity",
+                      "Condition": {
+                        "StringLike": {
+                          "%s:sub": "system:serviceaccount:%s:%s"
+                        }
+                      }
+                    }
+                  ]
+                }
+          toFieldPath: spec.forProvider.assumeRolePolicyDocument
+          policy:
+            fromFieldPath: Required
+
+    - name: irsa-iam-policy
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: Policy
+        metadata:
+          labels:
+            role: irsa
+        spec:
+          forProvider: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.serviceAccountName
+              - fromFieldPath: spec.parameters.clusterName
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.name
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.policyDocument
+          toFieldPath: spec.forProvider.document
+
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.serviceAccountName
+              - fromFieldPath: spec.parameters.clusterName
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: "metadata.labels[role]"
+
+    - name: irsa-iam-policy-attachment
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArnSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: irsa
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: irsa
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.serviceAccountName
+              - fromFieldPath: spec.parameters.clusterName
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: "spec.forProvider.policyArnSelector.matchLabels.role"
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.serviceAccountName
+              - fromFieldPath: spec.parameters.clusterName
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: "spec.forProvider.roleNameSelector.matchLabels.role"

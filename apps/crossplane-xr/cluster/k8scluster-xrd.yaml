@@ -34,11 +34,11 @@ spec:
                   version:
                     description: The Kubernetes version for the cluster.
                     type: string
+                  email:
+                    description: LetsEncrypt email 
+                    type: string
                   domain:
                     description: Route53 domain
-                    type: string
-                  email:
-                    description: Email used for cert manager's ClusterIssuer
                     type: string
                   sourceCidrs:
                     description: CIDR block allowed to access the public API server endpoint

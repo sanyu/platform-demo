@@ -87,6 +87,17 @@ spec:
             fromFieldPath: Optional
 
         - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.identity.oidc.issuer
+          toFieldPath: status.eks.iamoidc
+          transforms:
+            - type: string
+              string:
+                type: TrimPrefix
+                trim: 'https://'
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
           fromFieldPath: status.atProvider.endpoint
           toFieldPath: status.eks.endpoint
           policy:
@@ -698,6 +709,7 @@ spec:
           toFieldPath: spec.forProvider.tags[0].value
           policy:
             fromFieldPath: Required
+
     - base:
         apiVersion: iam.aws.crossplane.io/v1beta1
         kind: OpenIDConnectProvider
@@ -714,6 +726,142 @@ spec:
           policy:
             fromFieldPath: Required
           type: FromCompositeFieldPath
+
+
+    - name: kubernetes
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha1
+        kind: ProviderConfig
+        spec:
+          credentials:
+            source: Secret
+            secretRef:
+              key: kubeconfig
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: spec.writeConnectionSecretToRef.namespace
+          toFieldPath: spec.credentials.secretRef.namespace
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: metadata.uid
+          toFieldPath: spec.credentials.secretRef.name
+          type: FromCompositeFieldPath
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-ekscluster"
+                type: Format
+      readinessChecks:
+        - type: None
+
+    - name: configmap-cluster-info
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha1
+        kind: Object
+        spec:
+          forProvider:
+            manifest:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: cluster-info
+                namespace: default
+              data: {}
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.manifest.data.clusterName
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.forProvider.manifest.data.accountID
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.parameters.sourceCidrs[0]
+          toFieldPath: spec.forProvider.manifest.data.sourceCidrs
+          type: FromCompositeFieldPath
+
+    #TODO: Remove this from here
+    - name: letsencrypt-issuer-staging
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha1
+        kind: Object
+        spec:
+          forProvider:
+            manifest:
+              apiVersion: cert-manager.io/v1
+              kind: ClusterIssuer
+              metadata:
+                name: letsencrypt-staging
+              spec:
+                acme:
+                  server: https://acme-staging-v02.api.letsencrypt.org/directory
+                  email: example@example.com
+                  privateKeySecretRef:
+                    name: letsencrypt-staging-key
+                  solvers:
+                    - http01:
+                        ingress:
+                          class: nginx
+
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.parameters.email
+          toFieldPath: spec.forProvider.manifest.spec.acme.email
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+    #TODO: Remove this from here
+    - name: letsencrypt-issuer-production
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha1
+        kind: Object
+        spec:
+          forProvider:
+            manifest:
+              apiVersion: cert-manager.io/v1
+              kind: ClusterIssuer
+              metadata:
+                name: letsencrypt
+              spec:
+                acme:
+                  server: https://acme-v02.api.letsencrypt.org/directory
+                  email: example@example.com
+                  privateKeySecretRef:
+                    name: letsencrypt-production-key
+                  solvers:
+                    - http01:
+                        ingress:
+                          class: nginx
+
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.parameters.email
+          toFieldPath: spec.forProvider.manifest.spec.acme.email
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
 
     - name: helm
       base:
@@ -772,14 +920,13 @@ spec:
                     ingress.kubernetes.io/ssl-redirect: "true"
                     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
                     nginx.ingress.kubernetes.io/ssl-passthrough: "true"
-                  #   cert-manager.io/cluster-issuer: letsencrypt
-                  # tls:
-                  #     - hosts:
-                  #         - ingress.local
-                  #       secretName: letsencrypt
+                    cert-manager.io/cluster-issuer: letsencrypt
+                  tls:
+                      - hosts:
+                          - ingress.local
+                        secretName: letsencrypt-cert
 
       patches:
-
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
           type: FromCompositeFieldPath
@@ -798,17 +945,17 @@ spec:
           policy:
             fromFieldPath: Required
 
-        # - type: CombineFromComposite
-        #   combine:
-        #     variables:
-        #       - fromFieldPath: spec.id
-        #       - fromFieldPath: spec.parameters.domain
-        #     strategy: string
-        #     string:
-        #       fmt: "%s-argo.%s"
-        #   toFieldPath: spec.forProvider.values.server.ingress.tls[0].hosts[0]
-        #   policy:
-        #     fromFieldPath: Required
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.id
+              - fromFieldPath: spec.parameters.domain
+            strategy: string
+            string:
+              fmt: "%s-argo.%s"
+          toFieldPath: spec.forProvider.values.server.ingress.tls[0].hosts[0]
+          policy:
+            fromFieldPath: Required
 
     - name: bootstrap
       base:
@@ -846,19 +993,116 @@ spec:
             values:
               controller:
                 service:
-                  loadBalancerSourceRanges:
-                    - "0.0.0.0/0"
+                  # loadBalancerSourceRanges:
+                  #   - "0.0.0.0/0"
                   annotations:
                     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
                     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
                     service.beta.kubernetes.io/aws-load-balancer-type: nlb
       patches:
-        - fromFieldPath: spec.parameters.sourceCidrs
-          toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
-          type: FromCompositeFieldPath
+        # - fromFieldPath: spec.parameters.sourceCidrs
+        #   toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
+        #   type: FromCompositeFieldPath
 
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+    #TODO: move external-dns out of here
+    - name: external-dns
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: external-dns
+            chart:
+              name: external-dns
+              repository: https://charts.bitnami.com/bitnami
+              version: "6.5.6"
+            values:
+              image:
+                registry: public.ecr.aws
+              fullnameOverride: external-dns
+              policy: sync
+              aws:
+                zoneType: public
+                region: ap-southeast-2
+              serviceAccount:
+                name: external-dns
+                annotations: {}
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: spec.id
+            strategy: string
+            string:
+              fmt: "arn:aws:iam::%s:role/external-dns-%s"
+          toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
+
+
+    - name: irsa-external-dns
+      base:
+        apiVersion: iam.demo.com/v1alpha1
+        kind: XIamRoleForServiceAccount
+        spec:
+          parameters:
+            accountID: 1234
+            clusterName: cluster
+            OIDCProvider: oidc
+            serviceAccountName: external-dns
+            namespace: external-dns
+            policyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "route53:ChangeResourceRecordSets"
+                    ],
+                    "Resource": [
+                      "arn:aws:route53:::hostedzone/*"
+                    ]
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "route53:ListHostedZones",
+                      "route53:ListResourceRecordSets"
+                    ],
+                    "Resource": [
+                      "*"
+                    ]
+                  }
+                ]
+              }
+      patches:
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.parameters.accountID
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.parameters.clusterName
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: status.eks.iamoidc
+          toFieldPath: spec.parameters.OIDCProvider
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required

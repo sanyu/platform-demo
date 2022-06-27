@@ -220,7 +220,7 @@ spec:
         type: FromCompositeFieldPath
 
     - name: eksfargate-karpenter
-      base: 
+      base:
         apiVersion: eks.aws.crossplane.io/v1beta1
         kind: FargateProfile
         spec:
@@ -239,8 +239,6 @@ spec:
       - fromFieldPath: spec.id
         toFieldPath: metadata.name
         type: FromCompositeFieldPath
-      # - fromFieldPath: spec.parameters.fargateNamespace
-      #   toFieldPath: spec.forProvider.selectors[0].namespace
       - fromFieldPath: spec.id
         toFieldPath: spec.forProvider.podExecutionRoleArnSelector.matchLabels.role
         transforms:
@@ -258,6 +256,51 @@ spec:
       - type: MatchString
         fieldPath: status.atProvider.status
         matchString: ACTIVE
+
+    # - name: eksfargate-coredns
+    #   base:
+    #     apiVersion: eks.aws.crossplane.io/v1beta1
+    #     kind: FargateProfile
+    #     spec:
+    #       forProvider:
+    #         region: ap-southeast-2
+    #         clusterNameSelector:
+    #           matchControllerRef: true
+    #         podExecutionRoleArnSelector:
+    #           matchControllerRef: true
+    #         subnetSelector:
+    #           matchLabels:
+    #             access: private
+    #         selectors:
+    #           - namespace: kube-system
+    #             labels:
+    #               k8s-app: kube-dns
+    #   patches:
+    #   - fromFieldPath: spec.id
+    #     toFieldPath: metadata.name
+    #     transforms:
+    #       - type: string
+    #         string:
+    #           fmt: "%s-coredns"
+    #           type: Format
+    #     type: FromCompositeFieldPath
+    #   - fromFieldPath: spec.id
+    #     toFieldPath: spec.forProvider.podExecutionRoleArnSelector.matchLabels.role
+    #     transforms:
+    #       - type: string
+    #         string:
+    #           fmt: "%s-fargateprofile"
+    #           type: Format
+    #     type: FromCompositeFieldPath
+    #
+    #   - type: ToCompositeFieldPath
+    #     fromFieldPath: status.atProvider.status
+    #     toFieldPath: status.eks.karpenterFargateProfileStatus
+    #
+    #   readinessChecks:
+    #   - type: MatchString
+    #     fieldPath: status.atProvider.status
+    #     matchString: ACTIVE
 
 
     - name: iamrole-controlplane
@@ -400,6 +443,18 @@ spec:
               matchLabels:
                 role: nodegroup
 
+    - name: iamattachment-ssm
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+
     - name: vpc
       base:
         apiVersion: ec2.aws.crossplane.io/v1beta1
@@ -426,6 +481,16 @@ spec:
             string:
               fmt: "%s"
           toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.tags[1].key
+          type: FromCompositeFieldPath
+          transforms:
+            - type: string
+              string:
+                fmt: "kubernetes.io/cluster/%s"
+                type: Format
           policy:
             fromFieldPath: Required
 
@@ -872,6 +937,8 @@ spec:
       base:
         apiVersion: kubernetes.crossplane.io/v1alpha1
         kind: Object
+        metadata:
+          name: cluster-info-cm
         spec:
           forProvider:
             manifest:
@@ -902,11 +969,61 @@ spec:
           toFieldPath: spec.forProvider.manifest.data.sourceCidrs
           type: FromCompositeFieldPath
 
+    - name: karpenter-default-provider
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha1
+        kind: Object
+        metadata:
+          name: cluster-info-cm
+        spec:
+          # references:
+          # - dependsOn:
+          #     apiVersion: helm.crossplane.io/v1beta1
+          #     kind: Release
+          forProvider:
+            manifest:
+              apiVersion: karpenter.sh/v1alpha5
+              kind: Provisioner
+              metadata:
+                name: default
+              spec:
+                requirements:
+                  - key: karpenter.sh/capacity-type
+                    operator: In
+                    values: ["spot"]
+                limits:
+                  resources:
+                    cpu: 20
+                provider:
+                  subnetSelector:
+                    access: private
+                  securityGroupSelector:
+                    aws:eks:cluster-name: demo
+                ttlSecondsAfterEmpty: 30
+
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        # - fromFieldPath: spec.id
+        #   toFieldPath: spec.references[0].dependsOn.name
+        #   type: FromCompositeFieldPath
+        #   transforms:
+        #     - type: string
+        #       string:
+        #         fmt: "helm-karpenter-%s"
+        #         type: Format
+
     #TODO: Remove this from here
     - name: letsencrypt-issuer-staging
       base:
         apiVersion: kubernetes.crossplane.io/v1alpha1
         kind: Object
+        metadata:
+          name: letsencrypt-staging
         spec:
           forProvider:
             manifest:
@@ -943,6 +1060,8 @@ spec:
       base:
         apiVersion: kubernetes.crossplane.io/v1alpha1
         kind: Object
+        metadata:
+          name: letsencrypt-production
         spec:
           forProvider:
             manifest:
@@ -1003,6 +1122,75 @@ spec:
       readinessChecks:
         - type: None
 
+    - name: karpenter
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: karpenter
+            chart:
+              name: karpenter
+              repository: https://charts.karpenter.sh/
+              version: "0.11.1"
+            values:
+              nameOverride: karpenter
+              fullnameOverride: karpenter
+              clusterName: cluster
+              clusterEndpoint: endpoint
+              aws:
+                defaultInstanceProfile: instance-profile
+              serviceAccount:
+                name: karpenter
+                annotations: {}
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "helm-karpenter-%s"
+              type: Format
+
+          type: FromCompositeFieldPath
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.values.clusterName
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: status.eks.endpoint
+          toFieldPath: spec.forProvider.values.clusterEndpoint
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.values.aws.defaultInstanceProfile
+          transforms:
+          - type: string
+            string:
+              fmt: "karpenter-node-%s"
+              type: Format
+          type: FromCompositeFieldPath
+
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: spec.id
+            strategy: string
+            string:
+              fmt: "arn:aws:iam::%s:role/karpenter-%s"
+          toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
+
     - name: argocd
       base:
         apiVersion: helm.crossplane.io/v1beta1
@@ -1016,6 +1204,7 @@ spec:
               repository: https://argoproj.github.io/argo-helm
               version: "4.9.4"
             values:
+              fullnameOverride: argocd
               controller:
                 args:
                   appResyncPeriod: 30
@@ -1068,6 +1257,12 @@ spec:
           policy:
             fromFieldPath: Required
 
+        - fromFieldPath: status.eks.endpoint
+          toFieldPath: spec.forProvider.values.clusterEndpoint
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
     - name: bootstrap
       base:
         apiVersion: helm.crossplane.io/v1beta1
@@ -1089,37 +1284,48 @@ spec:
           policy:
             fromFieldPath: Required
 
-    - name: nginx
-      base:
-        apiVersion: helm.crossplane.io/v1beta1
-        kind: Release
-        spec:
-          rollbackLimit: 3
-          forProvider:
-            namespace: ingress-nginx
-            chart:
-              name: ingress-nginx
-              repository: https://kubernetes.github.io/ingress-nginx
-              version: "4.1.4"
-            values:
-              controller:
-                service:
-                  # loadBalancerSourceRanges:
-                  #   - "0.0.0.0/0"
-                  annotations:
-                    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
-                    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
-                    service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      patches:
-        # - fromFieldPath: spec.parameters.sourceCidrs
-        #   toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
-        #   type: FromCompositeFieldPath
-
-        - fromFieldPath: spec.id
-          toFieldPath: spec.providerConfigRef.name
+        - fromFieldPath: status.eks.endpoint
+          toFieldPath: spec.forProvider.values.clusterEndpoint
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
+
+    # - name: nginx
+    #   base:
+    #     apiVersion: helm.crossplane.io/v1beta1
+    #     kind: Release
+    #     spec:
+    #       rollbackLimit: 3
+    #       forProvider:
+    #         namespace: ingress-nginx
+    #         chart:
+    #           name: ingress-nginx
+    #           repository: https://kubernetes.github.io/ingress-nginx
+    #           version: "4.1.4"
+    #         values:
+    #           controller:
+    #             service:
+    #               # loadBalancerSourceRanges:
+    #               #   - "0.0.0.0/0"
+    #               annotations:
+    #                 service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+    #                 service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
+    #                 service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    #   patches:
+    #     # - fromFieldPath: spec.parameters.sourceCidrs
+    #     #   toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
+    #     #   type: FromCompositeFieldPath
+    #     - fromFieldPath: status.eks.endpoint
+    #       toFieldPath: spec.forProvider.values.clusterEndpoint
+    #       type: FromCompositeFieldPath
+    #       policy:
+    #         fromFieldPath: Required
+    #
+    #     - fromFieldPath: spec.id
+    #       toFieldPath: spec.providerConfigRef.name
+    #       type: FromCompositeFieldPath
+    #       policy:
+    #         fromFieldPath: Required
 
     #TODO: move external-dns out of here
     - name: external-dns
@@ -1148,6 +1354,12 @@ spec:
       patches:
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: status.eks.endpoint
+          toFieldPath: spec.forProvider.values.clusterEndpoint
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
@@ -1190,6 +1402,84 @@ spec:
                   {
                     "Effect": "Allow",
                     "Action": [
+                      "route53:ListHostedZones",
+                      "route53:ListResourceRecordSets"
+                    ],
+                    "Resource": [
+                      "*"
+                    ]
+                  }
+                ]
+              }
+      patches:
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.parameters.accountID
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.parameters.clusterName
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: status.eks.iamoidc
+          toFieldPath: spec.parameters.OIDCProvider
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+    - name: instance-profile-karpenter
+      base:
+        apiVersion: iam.aws.crossplane.io/v1alpha1
+        kind: InstanceProfile
+        spec:
+          forProvider:
+            roleSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "karpenter-node-%s"
+              type: Format
+          type: FromCompositeFieldPath
+
+    - name: irsa-karpenter
+      base:
+        apiVersion: iam.demo.com/v1alpha1
+        kind: XIamRoleForServiceAccount
+        spec:
+          parameters:
+            serviceAccountName: karpenter
+            namespace: karpenter
+            policyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:CreateLaunchTemplate",
+                      "ec2:CreateFleet",
+                      "ec2:RunInstances",
+                      "ec2:CreateTags",
+                      "iam:PassRole",
+                      "ec2:TerminateInstances",
+                      "ec2:DeleteLaunchTemplate",
+                      "ec2:DescribeLaunchTemplates",
+                      "ec2:DescribeInstances",
+                      "ec2:DescribeSecurityGroups",
+                      "ec2:DescribeSubnets",
+                      "ec2:DescribeInstanceTypes",
+                      "ec2:DescribeInstanceTypeOfferings",
+                      "ec2:DescribeAvailabilityZones",
+                      "ssm:GetParameter",
                       "route53:ListHostedZones",
                       "route53:ListResourceRecordSets"
                     ],

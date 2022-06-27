@@ -149,6 +149,117 @@ spec:
         fieldPath: status.atProvider.status
         matchString: ACTIVE
 
+    - name: iamrole-fargateprofile
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: Role
+        spec:
+          forProvider:
+            assumeRolePolicyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "eks-fargate-pods.amazonaws.com"
+                            ]
+                        },
+                        "Action": [
+                            "sts:AssumeRole"
+                        ]
+                    }
+                ]
+              }
+      patches:
+      - fromFieldPath: spec.id
+        toFieldPath: metadata.name
+        transforms:
+        - type: string
+          string:
+            fmt: "%s-fargateprofile"
+            type: Format
+        type: FromCompositeFieldPath
+
+      - fromFieldPath: spec.id
+        toFieldPath: metadata.labels.role
+        transforms:
+        - type: string
+          string:
+            fmt: "%s-fargateprofile"
+            type: Format
+        type: FromCompositeFieldPath
+
+    - name:  iamrolepolicy-fp
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy
+            roleNameSelector:
+              matchControllerRef: true
+      patches:
+      - fromFieldPath: spec.id
+        toFieldPath: metadata.name
+        transforms:
+        - type: string
+          string:
+            fmt: "%s-fp"
+            type: Format
+        type: FromCompositeFieldPath
+
+      - fromFieldPath: spec.id
+        toFieldPath: spec.forProvider.roleNameSelector.matchLabels.role
+        transforms:
+        - type: string
+          string:
+            fmt: "%s-fargateprofile"
+            type: Format
+        type: FromCompositeFieldPath
+
+    - name: eksfargate-karpenter
+      base: 
+        apiVersion: eks.aws.crossplane.io/v1beta1
+        kind: FargateProfile
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            clusterNameSelector:
+              matchControllerRef: true
+            podExecutionRoleArnSelector:
+              matchControllerRef: true
+            subnetSelector:
+              matchLabels:
+                access: private
+            selectors:
+              - namespace: karpenter
+      patches:
+      - fromFieldPath: spec.id
+        toFieldPath: metadata.name
+        type: FromCompositeFieldPath
+      # - fromFieldPath: spec.parameters.fargateNamespace
+      #   toFieldPath: spec.forProvider.selectors[0].namespace
+      - fromFieldPath: spec.id
+        toFieldPath: spec.forProvider.podExecutionRoleArnSelector.matchLabels.role
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-fargateprofile"
+              type: Format
+        type: FromCompositeFieldPath
+
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.status
+        toFieldPath: status.eks.karpenterFargateProfileStatus
+
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.status
+        matchString: ACTIVE
+
+
     - name: iamrole-controlplane
       base:
         apiVersion: iam.aws.crossplane.io/v1beta1

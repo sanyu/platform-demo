@@ -9,20 +9,18 @@ metadata:
 spec:
   project: platform-demo
   source:
-    chart: nginx-ingress-controller
-    repoURL: https://charts.bitnami.com/bitnami
-    targetRevision: "9.2.13"
+    chart: ingress-nginx
+    repoURL:  https://kubernetes.github.io/ingress-nginx
+    targetRevision: "4.1.4"
     helm:
       parameters:
         - name: fullnameOverride
           value: ingress-nginx
-        - name: image.registry
-          value: public.ecr.aws
-        - name: service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-backend-protocol
+        - name: controller.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-backend-protocol
           value: tcp
-        - name: service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-cross-zone-load-balancing-enabled
-          value: 'true'
-        - name: service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-type
+        - name: controller.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-cross-zone-load-balancing-enabled
+          value: "true"
+        - name: controller.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-type
           value: nlb
 
   destination:

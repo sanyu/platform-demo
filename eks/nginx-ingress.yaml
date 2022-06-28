@@ -21,7 +21,7 @@ spec:
         - name: service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-backend-protocol
           value: tcp
         - name: service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-cross-zone-load-balancing-enabled
-          value: "true"
+          value: 'true'
         - name: service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-type
           value: nlb
 

@@ -1,0 +1,28 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-termination-handler
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform-demo
+  source:
+    chart: aws-node-termination-handler
+    repoURL: https://aws.github.io/eks-charts/
+    targetRevision: "0.18.5"
+    helm:
+      parameters:
+        - name: enablePrometheusServer
+          value: "true"
+        - name: emitKubernetesEvents
+          value: "true"
+  destination:
+    namespace: kube-system
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+      allowEmpty: true

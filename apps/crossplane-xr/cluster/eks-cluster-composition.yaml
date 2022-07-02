@@ -123,6 +123,7 @@ spec:
         spec:
           forProvider:
             region: ap-southeast-2
+            capacityType: SPOT
             clusterNameSelector:
               matchControllerRef: true
             nodeRoleSelector:
@@ -134,6 +135,7 @@ spec:
               matchLabels:
                 type: subnet
                 access: private
+                zone: ap-southeast-2a
             scalingConfig:
               minSize: 1
               maxSize: 5
@@ -141,9 +143,9 @@ spec:
             instanceTypes:
               - t3.medium
       patches:
-      - type: ToCompositeFieldPath
-        fromFieldPath: status.atProvider.status
-        toFieldPath: status.nodePoolStatus
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.status
+          toFieldPath: status.nodePoolStatus
       readinessChecks:
       - type: MatchString
         fieldPath: status.atProvider.status
@@ -620,7 +622,7 @@ spec:
             cidrBlock: 10.0.200.0/24
             vpcIdSelector:
               matchControllerRef: true
-            mapPublicIPOnLaunch: false
+            mapPublicIPOnLaunch: true
             tags:
               - key: Name
               - key: access
@@ -655,7 +657,7 @@ spec:
             cidrBlock: 10.0.201.0/24
             vpcIdSelector:
               matchControllerRef: true
-            mapPublicIPOnLaunch: false
+            mapPublicIPOnLaunch: true
             tags:
               - key: Name
               - key: access
@@ -699,17 +701,17 @@ spec:
             region: ap-southeast-2
             domain: vpc
 
-    - name: elastic-ip-2
-      base:
-        apiVersion: ec2.aws.crossplane.io/v1beta1
-        kind: Address
-        metadata:
-          labels:
-            type: eip-2
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            domain: vpc
+    # - name: elastic-ip-2
+    #   base:
+    #     apiVersion: ec2.aws.crossplane.io/v1beta1
+    #     kind: Address
+    #     metadata:
+    #       labels:
+    #         type: eip-2
+    #     spec:
+    #       forProvider:
+    #         region: ap-southeast-2
+    #         domain: vpc
 
     - name: natgateway-1
       base:
@@ -745,39 +747,39 @@ spec:
           policy:
             fromFieldPath: Required
 
-    - name: natgateway-2
-      base:
-        apiVersion: ec2.aws.crossplane.io/v1beta1
-        kind: NATGateway
-        metadata:
-          labels:
-            type: natgw-2
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            allocationIdSelector:
-              matchLabels:
-                type: eip-2
-            vpcIdSelector:
-              matchControllerRef: true
-            subnetIdSelector:
-              matchLabels:
-                type: subnet
-                access: public
-                zone: ap-southeast-2b
-            tags:
-              - key: Name
-      patches:
-        - type: CombineFromComposite
-          combine:
-            variables:
-              - fromFieldPath: metadata.name
-            strategy: string
-            string:
-              fmt: "%s-nat-gateway-2"
-          toFieldPath: spec.forProvider.tags[0].value
-          policy:
-            fromFieldPath: Required
+    # - name: natgateway-2
+    #   base:
+    #     apiVersion: ec2.aws.crossplane.io/v1beta1
+    #     kind: NATGateway
+    #     metadata:
+    #       labels:
+    #         type: natgw-2
+    #     spec:
+    #       forProvider:
+    #         region: ap-southeast-2
+    #         allocationIdSelector:
+    #           matchLabels:
+    #             type: eip-2
+    #         vpcIdSelector:
+    #           matchControllerRef: true
+    #         subnetIdSelector:
+    #           matchLabels:
+    #             type: subnet
+    #             access: public
+    #             zone: ap-southeast-2b
+    #         tags:
+    #           - key: Name
+    #   patches:
+    #     - type: CombineFromComposite
+    #       combine:
+    #         variables:
+    #           - fromFieldPath: metadata.name
+    #         strategy: string
+    #         string:
+    #           fmt: "%s-nat-gateway-2"
+    #       toFieldPath: spec.forProvider.tags[0].value
+    #       policy:
+    #         fromFieldPath: Required
 
     - name: routetable-public
       base:
@@ -865,7 +867,8 @@ spec:
               - destinationCidrBlock: 0.0.0.0/0
                 natGatewayIdSelector:
                   matchLabels:
-                    type: natgw-2
+                    type: natgw-1
+                    # type: natgw-2
             associations:
               - subnetIdSelector:
                   matchLabels:
@@ -988,9 +991,14 @@ spec:
                 name: default
               spec:
                 requirements:
+                  - key: "topology.kubernetes.io/zone"
+                    operator: In
+                    values: ["ap-southeast-2a"]
+
                   - key: karpenter.sh/capacity-type
                     operator: In
                     values: ["spot"]
+
                 limits:
                   resources:
                     cpu: 20
@@ -1004,6 +1012,12 @@ spec:
       patches:
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: "spec.forProvider.manifest.spec.provider.securityGroupSelector[aws:eks:cluster-name]"
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
@@ -1205,6 +1219,15 @@ spec:
               version: "4.9.4"
             values:
               fullnameOverride: argocd
+              global:
+                image:
+                  repository: quay.io/argoproj/argocd
+              dex:
+                image:
+                  repository: ghcr.io/dexidp/dex
+              redis:
+                image:
+                  repository: redis
               controller:
                 args:
                   appResyncPeriod: 30
@@ -1227,6 +1250,33 @@ spec:
                         secretName: letsencrypt-cert
 
       patches:
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.forProvider.values.redis.image.repository
+          type: FromCompositeFieldPath
+          transforms:
+          - type: string
+            string:
+              fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/docker.io/library/redis"
+              type: Format
+
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.forProvider.values.dex.image.repository
+          type: FromCompositeFieldPath
+          transforms:
+          - type: string
+            string:
+              fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/ghcr.io/dexidp/dex"
+              type: Format
+
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.forProvider.values.global.image.repository
+          type: FromCompositeFieldPath
+          transforms:
+          - type: string
+            string:
+              fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/quay.io/argoproj/argocd"
+              type: Format
+
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
           type: FromCompositeFieldPath

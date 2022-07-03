@@ -47,7 +47,6 @@ spec:
               publicAccessCidrs:
                 - "0.0.0.0/0"
               subnetIdSelector:
-                matchControllerRef: true
                 matchLabels:
                   type: subnet
       patches:
@@ -143,7 +142,6 @@ spec:
               matchLabels:
                 role: nodegroup
             subnetSelector:
-              matchControllerRef: true
               matchLabels:
                 type: subnet
                 access: private

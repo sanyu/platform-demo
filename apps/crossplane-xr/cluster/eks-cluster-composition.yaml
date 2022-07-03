@@ -19,6 +19,25 @@ spec:
       patches:
         - fromFieldPath: "spec.parameters.region"
           toFieldPath: "spec.forProvider.region"
+    - name: irsa-config
+      patches:
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.parameters.accountID
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.parameters.clusterName
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: status.eks.iamoidc
+          toFieldPath: spec.parameters.OIDCProvider
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
 
   resources:
     - name: network
@@ -753,8 +772,8 @@ spec:
             string:
               fmt: "helm-karpenter-%s"
               type: Format
-
           type: FromCompositeFieldPath
+
         - fromFieldPath: spec.id
           toFieldPath: spec.providerConfigRef.name
           type: FromCompositeFieldPath
@@ -791,6 +810,75 @@ spec:
             string:
               fmt: "arn:aws:iam::%s:role/karpenter-%s"
           toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
+
+    - name: image-swapper
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: kube-system
+            chart:
+              name: k8s-image-swapper
+              repository: https://estahn.github.io/charts/
+              version: "1.0.1"
+            values:
+              nameOverride: k8s-image-swapper
+              fullnameOverride: k8s-image-swapper
+              image:
+                tag: "1.2.0"
+              serviceAccount:
+                name: k8s-image-swapper
+              config:
+                target:
+                  aws:
+                    region: ap-southeast-2
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.forProvider.values.config.target.aws.accountId
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "helm-k8s-image-swapper-%s"
+              type: Format
+
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: spec.id
+            strategy: string
+            string:
+              fmt: "arn:aws:iam::%s:role/k8s-image-swapper-%s"
+          toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
+
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.forProvider.values.image.repository
+          type: FromCompositeFieldPath
+          transforms:
+          - type: string
+            string:
+              fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/ghcr.io/estahn/k8s-image-swapper"
+              type: Format
+
+        - fromFieldPath: status.eks.endpoint
+          toFieldPath: spec.forProvider.values.clusterEndpoint
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
 
     - name: argocd
       base:
@@ -1012,15 +1100,73 @@ spec:
           toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
 
 
+    - name: irsa-k8s-image-swapper
+      base:
+        apiVersion: iam.demo.com/v1alpha1
+        kind: XIamRoleForServiceAccount
+        spec:
+          parameters:
+            serviceAccountName: k8s-image-swapper
+            namespace: kube-system
+      patches:
+        - type: PatchSet
+          patchSetName: irsa-config
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+            strategy: string
+            string:
+              fmt: |
+                {
+                  "Version": "2012-10-17",
+                  "Statement": [
+                    {
+                      "Sid": "",
+                      "Effect": "Allow",
+                      "Action": [
+                        "ecr:GetAuthorizationToken",
+                        "ecr:DescribeRepositories",
+                        "ecr:DescribeRegistry"
+                      ],
+                      "Resource": "*"
+                    },
+                    {
+                      "Sid": "",
+                      "Effect": "Allow",
+                      "Action": [
+                        "ecr:UploadLayerPart",
+                        "ecr:PutImage",
+                        "ecr:ListImages",
+                        "ecr:InitiateLayerUpload",
+                        "ecr:GetDownloadUrlForLayer",
+                        "ecr:CreateRepository",
+                        "ecr:CompleteLayerUpload",
+                        "ecr:BatchGetImage",
+                        "ecr:BatchCheckLayerAvailability"
+                      ],
+                      "Resource": [
+                        "arn:aws:ecr:*:%s:repository/docker.io/*",
+                        "arn:aws:ecr:*:%s:repository/quay.io/*",
+                        "arn:aws:ecr:*:%s:repository/ghcr.io/*",
+                        "arn:aws:ecr:*:%s:repository/k8s.gcr.io/*"
+                      ]
+                    }
+                  ]
+                }
+          toFieldPath: spec.parameters.policyDocument
+          policy:
+            fromFieldPath: Required
+
     - name: irsa-external-dns
       base:
         apiVersion: iam.demo.com/v1alpha1
         kind: XIamRoleForServiceAccount
         spec:
           parameters:
-            accountID: 1234
-            clusterName: cluster
-            OIDCProvider: oidc
             serviceAccountName: external-dns
             namespace: external-dns
             policyDocument: |
@@ -1049,23 +1195,8 @@ spec:
                 ]
               }
       patches:
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
-          toFieldPath: spec.parameters.accountID
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
-
-        - fromFieldPath: spec.id
-          toFieldPath: spec.parameters.clusterName
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
-
-        - fromFieldPath: status.eks.iamoidc
-          toFieldPath: spec.parameters.OIDCProvider
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: irsa-config
 
     - name: instance-profile-karpenter
       base:
@@ -1127,20 +1258,5 @@ spec:
                 ]
               }
       patches:
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
-          toFieldPath: spec.parameters.accountID
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
-
-        - fromFieldPath: spec.id
-          toFieldPath: spec.parameters.clusterName
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
-
-        - fromFieldPath: status.eks.iamoidc
-          toFieldPath: spec.parameters.OIDCProvider
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: irsa-config

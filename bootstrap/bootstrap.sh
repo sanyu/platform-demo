@@ -43,4 +43,10 @@ kubectl -n crossplane-system create secret generic aws-creds \
 
 rm crossplane-creds.conf
 
-kubectl apply -f argocd-bootstrap.yaml
+helm upgrade --install bootstrap-cluster bootstrap-cluster \
+  --repo  https://sanyu.github.io/helm-charts \
+  --version 0.2.0 \
+  --namespace argocd
+
+# export sourceCIDR="$(dig +short ip @dns.toys|tr -d '"')/32"
+# envsubst < custom-resources/eksCluster-orig.yaml > custom-resources/eksCluster.yaml

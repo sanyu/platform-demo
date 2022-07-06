@@ -1,0 +1,31 @@
+---
+apiVersion: core.oam.dev/v1beta1
+kind: TraitDefinition
+metadata:
+  name: nginx-ssl
+spec:
+  appliesToWorkloads:
+    - deployments.apps
+  podDisruptive: true
+  schematic:
+    cue:
+      template: |
+        parameter:{
+          domain: string
+        }
+        patchOutputs: {
+          ingress: {
+            metadata: annotations: {
+              "ingress.kubernetes.io/ssl-redirect": "true"
+              "nginx.ingress.kubernetes.io/force-ssl-redirect": "true"
+              "nginx.ingress.kubernetes.io/ssl-passthrough": "true"
+              "cert-manager.io/cluster-issuer": "letsencrypt-staging"
+            }
+            spec: {
+              tls:[{
+                hosts:[parameter.domain]
+                secretName: "letsencrypt-cert"
+              }]
+            }
+          }
+        }

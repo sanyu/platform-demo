@@ -3,6 +3,7 @@ apiVersion: core.oam.dev/v1beta1
 kind: TraitDefinition
 metadata:
   name: nginx-ssl
+  namespace: vela-system
 spec:
   appliesToWorkloads:
     - deployments.apps

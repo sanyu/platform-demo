@@ -3,6 +3,7 @@ apiVersion: core.oam.dev/v1beta1
 kind: ComponentDefinition
 metadata:
   name: backend
+  namespace: vela-system
   annotations:
     definition.oam.dev/description: "backend"
 spec:

@@ -1,0 +1,110 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xclusters.aws.demo.com
+  labels:
+    provider: aws
+    cluster: eks
+spec:
+  compositeTypeRef:
+    apiVersion: aws.demo.com/v1alpha1
+    kind: XCluster
+  writeConnectionSecretsToNamespace: crossplane-system
+
+  patchSets:
+    - name: metadata
+      patches:
+        - fromFieldPath: metadata.labels
+    - name: common-parameters
+      patches:
+        - fromFieldPath: "spec.parameters.region"
+          toFieldPath: "spec.forProvider.region"
+
+  resources:
+    - name: network
+      base:
+        apiVersion: aws.demo.com/v1alpha1
+        kind: XDemoNetwork
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.id
+
+    - name: bootstrap-charts
+      base:
+        apiVersion: bootstrap.demo.com/v1alpha1
+        kind: XServices
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.id
+
+        - fromFieldPath: spec.parameters.domain
+          toFieldPath: spec.parameters.domain
+
+        - fromFieldPath: spec.parameters.email
+          toFieldPath: spec.parameters.email
+
+        - fromFieldPath: metadata.uid
+          toFieldPath: spec.providerConfigRef.name
+
+        - fromFieldPath: status.eks.endpoint
+          toFieldPath: spec.eks.endpoint
+
+        - fromFieldPath: status.eks.iamoidc
+          toFieldPath: spec.eks.iamoidc
+
+        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+          toFieldPath: spec.accountID
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+    - name: cluster
+      base:
+        apiVersion: aws.demo.com/v1alpha1
+        kind: XEKS
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.id
+
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+
+        - fromFieldPath: metadata.uid
+          toFieldPath: spec.parameters.writeConnectionSecretToRef.name
+
+        - fromFieldPath: spec.parameters.version
+          toFieldPath: spec.parameters.version
+
+        - fromFieldPath: spec.parameters.region
+          toFieldPath: spec.parameters.region
+
+        - fromFieldPath: spec.parameters.sourceCidrs
+          toFieldPath: spec.parameters.sourceCidrs
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.controlPlaneStatus
+          toFieldPath: status.controlPlaneStatus
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.clusterName
+          toFieldPath: status.clusterName
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.eks.oidc
+          toFieldPath: status.eks.oidc
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.eks.iamoidc
+          toFieldPath: status.eks.iamoidc
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.eks.endpoint
+          toFieldPath: status.eks.endpoint
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.eks.version
+          toFieldPath: status.eks.version
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.nodePoolStatus
+          toFieldPath: status.nodePoolStatus

@@ -1,27 +1,37 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: eks-cluster
+  name: xservices.bootstrap.demo.com
   labels:
-    provider: aws
-    cluster: eks
+    provider: helm
 spec:
   compositeTypeRef:
-    apiVersion: demo.com/v1alpha1
-    kind: XK8sCluster
+    apiVersion: bootstrap.demo.com/v1alpha1
+    kind: XServices
   writeConnectionSecretsToNamespace: crossplane-system
 
   patchSets:
     - name: metadata
       patches:
         - fromFieldPath: metadata.labels
-    - name: common-parameters
+
+    - name: helm-config
       patches:
-        - fromFieldPath: "spec.parameters.region"
-          toFieldPath: "spec.forProvider.region"
+        # All Helm releases derive their labels and annotations from the XR.
+        - fromFieldPath: metadata.labels
+          toFieldPath: metadata.labels
+
+        - fromFieldPath: metadata.annotations
+          toFieldPath: metadata.annotations
+
+        # All Helm releases derive the ProviderConfig to use from the XR.
+        - fromFieldPath: spec.id
+          toFieldPath: spec.providerConfigRef.name
+          type: FromCompositeFieldPath
+
     - name: irsa-config
       patches:
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+        - fromFieldPath: spec.accountID
           toFieldPath: spec.parameters.accountID
           type: FromCompositeFieldPath
           policy:
@@ -33,486 +43,13 @@ spec:
           policy:
             fromFieldPath: Required
 
-        - fromFieldPath: status.eks.iamoidc
+        - fromFieldPath: spec.eks.iamoidc
           toFieldPath: spec.parameters.OIDCProvider
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
 
   resources:
-    - name: network
-      base:
-        apiVersion: aws.demo.com/v1alpha1
-        kind: XNetwork
-      patches:
-        - fromFieldPath: spec.id
-          toFieldPath: spec.id
-
-    - name: ekscluster
-      base:
-        apiVersion: eks.aws.crossplane.io/v1beta1
-        kind: Cluster
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            version: "1.22"
-            roleArnSelector:
-              matchControllerRef: true
-              matchLabels:
-                role: controlplane
-            resourcesVpcConfig:
-              endpointPrivateAccess: true
-              endpointPublicAccess: true
-              publicAccessCidrs:
-                - "0.0.0.0/0"
-              subnetIdSelector:
-                matchLabels:
-                  type: subnet
-      patches:
-        - fromFieldPath: spec.id
-          toFieldPath: metadata.name
-          type: FromCompositeFieldPath
-
-        - fromFieldPath: spec.id
-          toFieldPath: spec.forProvider.resourcesVpcConfig.subnetIdSelector.matchLabels[networks.aws.demo.com/network-id]
-          type: FromCompositeFieldPath
-
-        - fromFieldPath: spec.parameters.sourceCidrs
-          toFieldPath: spec.forProvider.resourcesVpcConfig.publicAccessCidrs
-          type: FromCompositeFieldPath
-
-        - fromFieldPath: metadata.annotations[crossplane.io/external-name]
-          toFieldPath: metadata.annotations[crossplane.io/external-name]
-          type: FromCompositeFieldPath
-
-        - fromFieldPath: spec.parameters.version
-          toFieldPath: spec.forProvider.version
-          type: FromCompositeFieldPath
-
-        - fromFieldPath: spec.writeConnectionSecretToRef.namespace
-          toFieldPath: spec.writeConnectionSecretToRef.namespace
-          type: FromCompositeFieldPath
-
-        - fromFieldPath: metadata.uid
-          toFieldPath: spec.writeConnectionSecretToRef.name
-          transforms:
-            - type: string
-              string:
-                fmt: "%s-ekscluster"
-                type: Format
-          type: FromCompositeFieldPath
-
-        - type: ToCompositeFieldPath
-          fromFieldPath: spec.id
-          toFieldPath: status.clusterName
-
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.status
-          toFieldPath: status.controlPlaneStatus
-
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.identity.oidc.issuer
-          toFieldPath: status.eks.oidc
-          policy:
-            fromFieldPath: Optional
-
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.identity.oidc.issuer
-          toFieldPath: status.eks.iamoidc
-          transforms:
-            - type: string
-              string:
-                type: TrimPrefix
-                trim: 'https://'
-          policy:
-            fromFieldPath: Optional
-
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.endpoint
-          toFieldPath: status.eks.endpoint
-          policy:
-            fromFieldPath: Optional
-
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.version
-          toFieldPath: status.eks.version
-          policy:
-            fromFieldPath: Optional
-
-      readinessChecks:
-      - type: MatchString
-        fieldPath: status.atProvider.status
-        matchString: ACTIVE
-      connectionDetails:
-        - fromConnectionSecretKey: kubeconfig
-
-    - name: eksnodegroup
-      base:
-        apiVersion: eks.aws.crossplane.io/v1alpha1
-        kind: NodeGroup
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            capacityType: SPOT
-            clusterNameSelector:
-              matchControllerRef: true
-            nodeRoleSelector:
-              matchControllerRef: true
-              matchLabels:
-                role: nodegroup
-            subnetSelector:
-              matchLabels:
-                type: subnet
-                access: private
-                zone: ap-southeast-2a
-            scalingConfig:
-              minSize: 1
-              maxSize: 5
-              desiredSize: 1
-            instanceTypes:
-              - t3.medium
-      patches:
-        - fromFieldPath: spec.id
-          toFieldPath: spec.forProvider.subnetSelector.matchLabels[networks.aws.demo.com/network-id]
-          type: FromCompositeFieldPath
-
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.status
-          toFieldPath: status.nodePoolStatus
-      readinessChecks:
-      - type: MatchString
-        fieldPath: status.atProvider.status
-        matchString: ACTIVE
-
-    - name: iamrole-fargateprofile
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: Role
-        spec:
-          forProvider:
-            assumeRolePolicyDocument: |
-              {
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": [
-                                "eks-fargate-pods.amazonaws.com"
-                            ]
-                        },
-                        "Action": [
-                            "sts:AssumeRole"
-                        ]
-                    }
-                ]
-              }
-      patches:
-      - fromFieldPath: spec.id
-        toFieldPath: metadata.name
-        transforms:
-        - type: string
-          string:
-            fmt: "%s-fargateprofile"
-            type: Format
-        type: FromCompositeFieldPath
-
-      - fromFieldPath: spec.id
-        toFieldPath: metadata.labels.role
-        transforms:
-        - type: string
-          string:
-            fmt: "%s-fargateprofile"
-            type: Format
-        type: FromCompositeFieldPath
-
-    - name:  iamrolepolicy-fp
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: RolePolicyAttachment
-        spec:
-          forProvider:
-            policyArn: arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy
-            roleNameSelector:
-              matchControllerRef: true
-      patches:
-      - fromFieldPath: spec.id
-        toFieldPath: metadata.name
-        transforms:
-        - type: string
-          string:
-            fmt: "%s-fp"
-            type: Format
-        type: FromCompositeFieldPath
-
-      - fromFieldPath: spec.id
-        toFieldPath: spec.forProvider.roleNameSelector.matchLabels.role
-        transforms:
-        - type: string
-          string:
-            fmt: "%s-fargateprofile"
-            type: Format
-        type: FromCompositeFieldPath
-
-    - name: eksfargate-karpenter
-      base:
-        apiVersion: eks.aws.crossplane.io/v1beta1
-        kind: FargateProfile
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            clusterNameSelector:
-              matchControllerRef: true
-            podExecutionRoleArnSelector:
-              matchControllerRef: true
-            subnetSelector:
-              matchLabels:
-                access: private
-            selectors:
-              - namespace: karpenter
-      patches:
-        - fromFieldPath: spec.id
-          toFieldPath: spec.forProvider.subnetSelector.matchLabels[networks.aws.demo.com/network-id]
-          type: FromCompositeFieldPath
-
-        - fromFieldPath: spec.id
-          toFieldPath: metadata.name
-          type: FromCompositeFieldPath
-
-        - fromFieldPath: spec.id
-          toFieldPath: spec.forProvider.podExecutionRoleArnSelector.matchLabels.role
-          transforms:
-            - type: string
-              string:
-                fmt: "%s-fargateprofile"
-                type: Format
-          type: FromCompositeFieldPath
-
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.status
-          toFieldPath: status.eks.karpenterFargateProfileStatus
-
-      readinessChecks:
-      - type: MatchString
-        fieldPath: status.atProvider.status
-        matchString: ACTIVE
-
-    # - name: eksfargate-coredns
-    #   base:
-    #     apiVersion: eks.aws.crossplane.io/v1beta1
-    #     kind: FargateProfile
-    #     spec:
-    #       forProvider:
-    #         region: ap-southeast-2
-    #         clusterNameSelector:
-    #           matchControllerRef: true
-    #         podExecutionRoleArnSelector:
-    #           matchControllerRef: true
-    #         subnetSelector:
-    #           matchLabels:
-    #             access: private
-    #         selectors:
-    #           - namespace: kube-system
-    #             labels:
-    #               k8s-app: kube-dns
-    #   patches:
-    #   - fromFieldPath: spec.id
-    #     toFieldPath: metadata.name
-    #     transforms:
-    #       - type: string
-    #         string:
-    #           fmt: "%s-coredns"
-    #           type: Format
-    #     type: FromCompositeFieldPath
-    #   - fromFieldPath: spec.id
-    #     toFieldPath: spec.forProvider.podExecutionRoleArnSelector.matchLabels.role
-    #     transforms:
-    #       - type: string
-    #         string:
-    #           fmt: "%s-fargateprofile"
-    #           type: Format
-    #     type: FromCompositeFieldPath
-    #
-    #   - type: ToCompositeFieldPath
-    #     fromFieldPath: status.atProvider.status
-    #     toFieldPath: status.eks.karpenterFargateProfileStatus
-    #
-    #   readinessChecks:
-    #   - type: MatchString
-    #     fieldPath: status.atProvider.status
-    #     matchString: ACTIVE
-
-
-    - name: iamrole-controlplane
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: Role
-        metadata:
-          labels:
-            role: controlplane
-        spec:
-          forProvider:
-            assumeRolePolicyDocument: |
-              {
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": [
-                                "eks.amazonaws.com"
-                            ]
-                        },
-                        "Action": [
-                            "sts:AssumeRole"
-                        ]
-                    }
-                ]
-              }
-            tags:
-              - key: Name
-      patches:
-        - type: CombineFromComposite
-          combine:
-            variables:
-              - fromFieldPath: metadata.name
-            strategy: string
-            string:
-              fmt: "%s-controlplane-role"
-          toFieldPath: spec.forProvider.tags[0].value
-          policy:
-            fromFieldPath: Required
-
-    - name: iamrole-nodegroup
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: Role
-        metadata:
-          labels:
-            role: nodegroup
-        spec:
-          forProvider:
-            assumeRolePolicyDocument: |
-              {
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": [
-                                "ec2.amazonaws.com"
-                            ]
-                        },
-                        "Action": [
-                            "sts:AssumeRole"
-                        ]
-                    }
-                ]
-              }
-            tags:
-              - key: Name
-      patches:
-        - type: CombineFromComposite
-          combine:
-            variables:
-              - fromFieldPath: metadata.name
-            strategy: string
-            string:
-              fmt: "%s-nodegroup-role"
-          toFieldPath: spec.forProvider.tags[0].value
-          policy:
-            fromFieldPath: Required
-
-    - name: iamattachment-controlplane
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: RolePolicyAttachment
-        spec:
-          forProvider:
-            policyArn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
-            roleNameSelector:
-              matchControllerRef: true
-              matchLabels:
-                role: controlplane
-
-    - name: iamattachment-service
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: RolePolicyAttachment
-        spec:
-          forProvider:
-            policyArn: arn:aws:iam::aws:policy/AmazonEKSServicePolicy
-            roleNameSelector:
-              matchControllerRef: true
-              matchLabels:
-                role: controlplane
-
-    - name: iamattachment-worker
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: RolePolicyAttachment
-        spec:
-          forProvider:
-            policyArn: arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
-            roleNameSelector:
-              matchControllerRef: true
-              matchLabels:
-                role: nodegroup
-
-    - name: iamattachment-cni
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: RolePolicyAttachment
-        spec:
-          forProvider:
-            policyArn: arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
-            roleNameSelector:
-              matchControllerRef: true
-              matchLabels:
-                role: nodegroup
-
-    - name: iamattachment-registry
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: RolePolicyAttachment
-        spec:
-          forProvider:
-            policyArn: arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-            roleNameSelector:
-              matchControllerRef: true
-              matchLabels:
-                role: nodegroup
-
-    - name: iamattachment-ssm
-      base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: RolePolicyAttachment
-        spec:
-          forProvider:
-            policyArn: arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-            roleNameSelector:
-              matchControllerRef: true
-              matchLabels:
-                role: nodegroup
-
-    - base:
-        apiVersion: iam.aws.crossplane.io/v1beta1
-        kind: OpenIDConnectProvider
-        spec:
-          forProvider:
-            clientIDList:
-              - sts.amazonaws.com
-            thumbprintList:
-              - "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
-      name: oidcProvider
-      patches:
-        - fromFieldPath: status.eks.oidc
-          toFieldPath: spec.forProvider.url
-          policy:
-            fromFieldPath: Required
-          type: FromCompositeFieldPath
-
-
     - name: kubernetes
       base:
         apiVersion: kubernetes.crossplane.io/v1alpha1
@@ -531,7 +68,7 @@ spec:
           toFieldPath: spec.credentials.secretRef.namespace
           type: FromCompositeFieldPath
 
-        - fromFieldPath: metadata.uid
+        - fromFieldPath: spec.providerConfigRef.name
           toFieldPath: spec.credentials.secretRef.name
           type: FromCompositeFieldPath
           transforms:
@@ -568,7 +105,7 @@ spec:
           toFieldPath: spec.forProvider.manifest.data.clusterName
           type: FromCompositeFieldPath
 
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+        - fromFieldPath: spec.accountID
           toFieldPath: spec.forProvider.manifest.data.accountID
           type: FromCompositeFieldPath
           policy:
@@ -610,7 +147,7 @@ spec:
                     cpu: 20
                 provider:
                   subnetSelector:
-                    access: private
+                    access: public
                   securityGroupSelector:
                     aws:eks:cluster-name: demo
                 ttlSecondsAfterEmpty: 30
@@ -654,7 +191,6 @@ spec:
               spec:
                 acme:
                   server: https://acme-staging-v02.api.letsencrypt.org/directory
-                  email: example@example.com
                   privateKeySecretRef:
                     name: letsencrypt-staging-key
                   solvers:
@@ -692,7 +228,6 @@ spec:
               spec:
                 acme:
                   server: https://acme-v02.api.letsencrypt.org/directory
-                  email: example@example.com
                   privateKeySecretRef:
                     name: letsencrypt-production-key
                   solvers:
@@ -731,7 +266,7 @@ spec:
           toFieldPath: spec.credentials.secretRef.namespace
           type: FromCompositeFieldPath
 
-        - fromFieldPath: metadata.uid
+        - fromFieldPath: spec.providerConfigRef.name
           toFieldPath: spec.credentials.secretRef.name
           type: FromCompositeFieldPath
           transforms:
@@ -765,6 +300,27 @@ spec:
                 name: karpenter
                 annotations: {}
       patches:
+        - type: PatchSet
+          patchSetName: helm-config
+
+        - fromFieldPath: spec.accountID
+          toFieldPath: spec.forProvider.values.controller.image
+          type: FromCompositeFieldPath
+          transforms:
+          - type: string
+            string:
+              fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/public.ecr.aws/karpenter/controller:v0.11.1"
+              type: Format
+
+        - fromFieldPath: spec.accountID
+          toFieldPath: spec.forProvider.values.webhook.image
+          type: FromCompositeFieldPath
+          transforms:
+          - type: string
+            string:
+              fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/public.ecr.aws/karpenter/webhook:v0.11.1"
+              type: Format
+
         - fromFieldPath: spec.id
           toFieldPath: metadata.name
           transforms:
@@ -775,18 +331,12 @@ spec:
           type: FromCompositeFieldPath
 
         - fromFieldPath: spec.id
-          toFieldPath: spec.providerConfigRef.name
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
-
-        - fromFieldPath: spec.id
           toFieldPath: spec.forProvider.values.clusterName
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
 
-        - fromFieldPath: status.eks.endpoint
+        - fromFieldPath: spec.eks.endpoint
           toFieldPath: spec.forProvider.values.clusterEndpoint
           type: FromCompositeFieldPath
           policy:
@@ -804,7 +354,7 @@ spec:
         - type: CombineFromComposite
           combine:
             variables:
-              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: spec.accountID
               - fromFieldPath: spec.id
             strategy: string
             string:
@@ -835,13 +385,10 @@ spec:
                   aws:
                     region: ap-southeast-2
       patches:
-        - fromFieldPath: spec.id
-          toFieldPath: spec.providerConfigRef.name
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: helm-config
 
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+        - fromFieldPath: spec.accountID
           toFieldPath: spec.forProvider.values.config.target.aws.accountId
           type: FromCompositeFieldPath
           policy:
@@ -858,14 +405,14 @@ spec:
         - type: CombineFromComposite
           combine:
             variables:
-              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: spec.accountID
               - fromFieldPath: spec.id
             strategy: string
             string:
               fmt: "arn:aws:iam::%s:role/k8s-image-swapper-%s"
           toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
 
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+        - fromFieldPath: spec.accountID
           toFieldPath: spec.forProvider.values.image.repository
           type: FromCompositeFieldPath
           transforms:
@@ -874,7 +421,7 @@ spec:
               fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/ghcr.io/estahn/k8s-image-swapper"
               type: Format
 
-        - fromFieldPath: status.eks.endpoint
+        - fromFieldPath: spec.eks.endpoint
           toFieldPath: spec.forProvider.values.clusterEndpoint
           type: FromCompositeFieldPath
           policy:
@@ -891,7 +438,7 @@ spec:
             chart:
               name: argo-cd
               repository: https://argoproj.github.io/argo-helm
-              version: "4.9.4"
+              version: "4.9.11"
             values:
               fullnameOverride: argocd
               global:
@@ -908,7 +455,8 @@ spec:
                   appResyncPeriod: 30
               server:
                 extraArgs:
-                  - "--insecure"
+                  - --insecure
+                  - --enable-gzip
                 ingress:
                   enabled: true
                   hosts:
@@ -925,7 +473,10 @@ spec:
                         secretName: letsencrypt-cert
 
       patches:
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+        - type: PatchSet
+          patchSetName: helm-config
+
+        - fromFieldPath: spec.accountID
           toFieldPath: spec.forProvider.values.redis.image.repository
           type: FromCompositeFieldPath
           transforms:
@@ -934,7 +485,7 @@ spec:
               fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/docker.io/library/redis"
               type: Format
 
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+        - fromFieldPath: spec.accountID
           toFieldPath: spec.forProvider.values.dex.image.repository
           type: FromCompositeFieldPath
           transforms:
@@ -943,7 +494,7 @@ spec:
               fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/ghcr.io/dexidp/dex"
               type: Format
 
-        - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+        - fromFieldPath: spec.accountID
           toFieldPath: spec.forProvider.values.global.image.repository
           type: FromCompositeFieldPath
           transforms:
@@ -952,11 +503,11 @@ spec:
               fmt: "%s.dkr.ecr.ap-southeast-2.amazonaws.com/quay.io/argoproj/argocd"
               type: Format
 
-        - fromFieldPath: spec.id
-          toFieldPath: spec.providerConfigRef.name
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
+        # - fromFieldPath: spec.id
+        #   toFieldPath: spec.providerConfigRef.name
+        #   type: FromCompositeFieldPath
+        #   policy:
+        #     fromFieldPath: Required
 
         - type: CombineFromComposite
           combine:
@@ -982,7 +533,7 @@ spec:
           policy:
             fromFieldPath: Required
 
-        - fromFieldPath: status.eks.endpoint
+        - fromFieldPath: spec.eks.endpoint
           toFieldPath: spec.forProvider.values.clusterEndpoint
           type: FromCompositeFieldPath
           policy:
@@ -1003,54 +554,56 @@ spec:
             values:
               bootstrapPath: eks
       patches:
-        - fromFieldPath: spec.id
-          toFieldPath: spec.providerConfigRef.name
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: helm-config
 
-        - fromFieldPath: status.eks.endpoint
+        # - fromFieldPath: spec.id
+        #   toFieldPath: spec.providerConfigRef.name
+        #   type: FromCompositeFieldPath
+        #   policy:
+        #     fromFieldPath: Required
+
+        - fromFieldPath: spec.eks.endpoint
           toFieldPath: spec.forProvider.values.clusterEndpoint
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
 
-    # - name: nginx
-    #   base:
-    #     apiVersion: helm.crossplane.io/v1beta1
-    #     kind: Release
-    #     spec:
-    #       rollbackLimit: 3
-    #       forProvider:
-    #         namespace: ingress-nginx
-    #         chart:
-    #           name: ingress-nginx
-    #           repository: https://kubernetes.github.io/ingress-nginx
-    #           version: "4.1.4"
-    #         values:
-    #           controller:
-    #             service:
-    #               # loadBalancerSourceRanges:
-    #               #   - "0.0.0.0/0"
-    #               annotations:
-    #                 service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
-    #                 service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
-    #                 service.beta.kubernetes.io/aws-load-balancer-type: nlb
-    #   patches:
-    #     # - fromFieldPath: spec.parameters.sourceCidrs
-    #     #   toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
-    #     #   type: FromCompositeFieldPath
-    #     - fromFieldPath: status.eks.endpoint
-    #       toFieldPath: spec.forProvider.values.clusterEndpoint
-    #       type: FromCompositeFieldPath
-    #       policy:
-    #         fromFieldPath: Required
-    #
-    #     - fromFieldPath: spec.id
-    #       toFieldPath: spec.providerConfigRef.name
-    #       type: FromCompositeFieldPath
-    #       policy:
-    #         fromFieldPath: Required
+    # Don't move this to ArgoCD so that we can delete the NLB when
+    # destroying the cluster
+    - name: nginx
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: ingress-nginx
+            chart:
+              name: ingress-nginx
+              repository: https://kubernetes.github.io/ingress-nginx
+              version: "4.1.4"
+            values:
+              controller:
+                service:
+                  # loadBalancerSourceRanges:
+                  #   - "0.0.0.0/0"
+                  annotations:
+                    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+                    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
+                    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      patches:
+        - type: PatchSet
+          patchSetName: helm-config
+
+        # - fromFieldPath: spec.parameters.sourceCidrs
+        #   toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
+        #   type: FromCompositeFieldPath
+        - fromFieldPath: spec.eks.endpoint
+          toFieldPath: spec.forProvider.values.clusterEndpoint
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
 
     #TODO: move external-dns out of here
     - name: external-dns
@@ -1077,13 +630,10 @@ spec:
                 name: external-dns
                 annotations: {}
       patches:
-        - fromFieldPath: spec.id
-          toFieldPath: spec.providerConfigRef.name
-          type: FromCompositeFieldPath
-          policy:
-            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: helm-config
 
-        - fromFieldPath: status.eks.endpoint
+        - fromFieldPath: spec.eks.endpoint
           toFieldPath: spec.forProvider.values.clusterEndpoint
           type: FromCompositeFieldPath
           policy:
@@ -1092,7 +642,7 @@ spec:
         - type: CombineFromComposite
           combine:
             variables:
-              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: spec.accountID
               - fromFieldPath: spec.id
             strategy: string
             string:
@@ -1114,10 +664,10 @@ spec:
         - type: CombineFromComposite
           combine:
             variables:
-              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
-              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
-              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
-              - fromFieldPath: metadata.labels[tags.crossplane.io/account]
+              - fromFieldPath: spec.accountID
+              - fromFieldPath: spec.accountID
+              - fromFieldPath: spec.accountID
+              - fromFieldPath: spec.accountID
             strategy: string
             string:
               fmt: |
@@ -1205,7 +755,6 @@ spec:
         spec:
           forProvider:
             roleSelector:
-              matchControllerRef: true
               matchLabels:
                 role: nodegroup
       patches:

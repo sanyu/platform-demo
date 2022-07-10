@@ -1,19 +1,22 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
 metadata:
-  name: xk8sclusters.demo.com
+  name: xeks.aws.demo.com
 spec:
   connectionSecretKeys:
-  - kubeconfig
-  defaultCompositionRef:
-    name: eks-cluster
-  group: demo.com
+    - kubeconfig
+
+  group: aws.demo.com
   names:
-    kind: XK8sCluster
-    plural: xk8sclusters
-  claimNames:
-    kind: K8sCluster
-    plural: k8sclusters
+    kind: XEKS
+    plural: xeks
+
+  # defaultCompositionRef:
+  #   name: eks-cluster
+  # claimNames:
+  #   kind: K8sCluster
+  #   plural: k8sclusters
+
   versions:
   - name: v1alpha1
     served: true
@@ -31,20 +34,26 @@ spec:
               parameters:
                 type: object
                 properties:
+                  region:
+                    description: AWS region for this cluster
+                    type: string
                   version:
                     description: The Kubernetes version for the cluster.
-                    type: string
-                  email:
-                    description: LetsEncrypt email 
-                    type: string
-                  domain:
-                    description: Route53 domain
                     type: string
                   sourceCidrs:
                     description: CIDR block allowed to access the public API server endpoint
                     type: array
                     items:
                       type: string
+                  writeConnectionSecretToRef:
+                    type: object
+                    description: "Secret name"
+                    properties:
+                      name:
+                        type: string
+                        description: "Name of the secret"
+                    required:
+                    - name
             required:
               - id
               - parameters

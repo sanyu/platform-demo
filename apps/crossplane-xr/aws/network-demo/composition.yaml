@@ -1,13 +1,13 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: xnetworks.aws.demo.com
+  name: xdemonetworks.aws.demo.com
   labels:
     provider: aws
 spec:
   compositeTypeRef:
     apiVersion: aws.demo.com/v1alpha1
-    kind: XNetwork
+    kind: XDemoNetwork
   writeConnectionSecretsToNamespace: crossplane-system
 
   patchSets:
@@ -119,6 +119,7 @@ spec:
           toFieldPath: spec.forProvider.tags[0].value
           policy:
             fromFieldPath: Required
+
         - fromFieldPath: spec.id
           toFieldPath: spec.forProvider.tags[1].key
           type: FromCompositeFieldPath
@@ -270,107 +271,6 @@ spec:
         - type: PatchSet
           patchSetName: network-id
 
-    - name: elastic-ip-1
-      base:
-        apiVersion: ec2.aws.crossplane.io/v1beta1
-        kind: Address
-        metadata:
-          labels:
-            type: eip-1
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            domain: vpc
-      patches:
-        - type: PatchSet
-          patchSetName: network-id
-
-    # - name: elastic-ip-2
-    #   base:
-    #     apiVersion: ec2.aws.crossplane.io/v1beta1
-    #     kind: Address
-    #     metadata:
-    #       labels:
-    #         type: eip-2
-    #     spec:
-    #       forProvider:
-    #         region: ap-southeast-2
-    #         domain: vpc
-    #   patches:
-    #     - type: PatchSet
-    #       patchSetName: network-id
-
-    - name: natgateway-1
-      base:
-        apiVersion: ec2.aws.crossplane.io/v1beta1
-        kind: NATGateway
-        metadata:
-          labels:
-            type: natgw-1
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            allocationIdSelector:
-              matchLabels:
-                type: eip-1
-            vpcIdSelector:
-              matchControllerRef: true
-            subnetIdSelector:
-              matchLabels:
-                type: subnet
-                access: public
-                zone: ap-southeast-2a
-            tags:
-              - key: Name
-      patches:
-        - type: PatchSet
-          patchSetName: network-id
-
-        - type: CombineFromComposite
-          combine:
-            variables:
-              - fromFieldPath: metadata.name
-            strategy: string
-            string:
-              fmt: "%s-nat-gateway-1"
-          toFieldPath: spec.forProvider.tags[0].value
-          policy:
-            fromFieldPath: Required
-
-    # - name: natgateway-2
-    #   base:
-    #     apiVersion: ec2.aws.crossplane.io/v1beta1
-    #     kind: NATGateway
-    #     metadata:
-    #       labels:
-    #         type: natgw-2
-    #     spec:
-    #       forProvider:
-    #         region: ap-southeast-2
-    #         allocationIdSelector:
-    #           matchLabels:
-    #             type: eip-2
-    #         vpcIdSelector:
-    #           matchControllerRef: true
-    #         subnetIdSelector:
-    #           matchLabels:
-    #             type: subnet
-    #             access: public
-    #             zone: ap-southeast-2b
-    #         tags:
-    #           - key: Name
-    #   patches:
-    #     - type: CombineFromComposite
-    #       combine:
-    #         variables:
-    #           - fromFieldPath: metadata.name
-    #         strategy: string
-    #         string:
-    #           fmt: "%s-nat-gateway-2"
-    #       toFieldPath: spec.forProvider.tags[0].value
-    #       policy:
-    #         fromFieldPath: Required
-
     - name: routetable-public
       base:
         apiVersion: ec2.aws.crossplane.io/v1beta1
@@ -409,81 +309,6 @@ spec:
             strategy: string
             string:
               fmt: "%s-public-route-table"
-          toFieldPath: spec.forProvider.tags[0].value
-          policy:
-            fromFieldPath: Required
-
-    - name: routetable-private-1
-      base:
-        apiVersion: ec2.aws.crossplane.io/v1beta1
-        kind: RouteTable
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            vpcIdSelector:
-              matchControllerRef: true
-            routes:
-              - destinationCidrBlock: 0.0.0.0/0
-                natGatewayIdSelector:
-                  matchLabels:
-                    type: natgw-1
-            associations:
-              - subnetIdSelector:
-                  matchLabels:
-                    type: subnet
-                    zone: ap-southeast-2a
-                    access: private
-            tags:
-              - key: Name
-      patches:
-        - type: PatchSet
-          patchSetName: network-id
-
-        - type: CombineFromComposite
-          combine:
-            variables:
-              - fromFieldPath: metadata.name
-            strategy: string
-            string:
-              fmt: "%s-private-route-table-1"
-          toFieldPath: spec.forProvider.tags[0].value
-          policy:
-            fromFieldPath: Required
-
-    - name: routetable-private-2
-      base:
-        apiVersion: ec2.aws.crossplane.io/v1beta1
-        kind: RouteTable
-        spec:
-          forProvider:
-            region: ap-southeast-2
-            vpcIdSelector:
-              matchControllerRef: true
-            routes:
-              - destinationCidrBlock: 0.0.0.0/0
-                natGatewayIdSelector:
-                  matchLabels:
-                    type: natgw-1
-                    # type: natgw-2
-            associations:
-              - subnetIdSelector:
-                  matchLabels:
-                    type: subnet
-                    zone: ap-southeast-2b
-                    access: private
-            tags:
-              - key: Name
-      patches:
-        - type: PatchSet
-          patchSetName: network-id
-
-        - type: CombineFromComposite
-          combine:
-            variables:
-              - fromFieldPath: metadata.name
-            strategy: string
-            string:
-              fmt: "%s-private-route-table-2"
           toFieldPath: spec.forProvider.tags[0].value
           policy:
             fromFieldPath: Required

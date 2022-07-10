@@ -20,7 +20,7 @@ spec:
               "ingress.kubernetes.io/ssl-redirect": "true"
               "nginx.ingress.kubernetes.io/force-ssl-redirect": "true"
               "nginx.ingress.kubernetes.io/ssl-passthrough": "true"
-              "cert-manager.io/cluster-issuer": "letsencrypt-staging"
+              "cert-manager.io/cluster-issuer": "letsencrypt"
             }
             spec: {
               tls:[{

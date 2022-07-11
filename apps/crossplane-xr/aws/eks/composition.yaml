@@ -1,0 +1,486 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xeks.aws.demo.com
+  labels:
+    provider: aws
+    cluster: eks
+spec:
+  compositeTypeRef:
+    apiVersion: aws.demo.com/v1alpha1
+    kind: XEKS
+  writeConnectionSecretsToNamespace: crossplane-system
+
+  patchSets:
+    - name: metadata
+      patches:
+        - fromFieldPath: metadata.labels
+
+    - name: common-parameters
+      patches:
+        - fromFieldPath: "spec.parameters.region"
+          toFieldPath: "spec.forProvider.region"
+
+  resources:
+    - name: ekscluster
+      base:
+        apiVersion: eks.aws.crossplane.io/v1beta1
+        kind: Cluster
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            version: "1.22"
+            roleArnSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: controlplane
+            resourcesVpcConfig:
+              endpointPrivateAccess: true
+              endpointPublicAccess: true
+              publicAccessCidrs:
+                - "0.0.0.0/0"
+              subnetIdSelector:
+                matchLabels:
+                  type: subnet
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.resourcesVpcConfig.subnetIdSelector.matchLabels[networks.aws.demo.com/network-id]
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: spec.parameters.sourceCidrs
+          toFieldPath: spec.forProvider.resourcesVpcConfig.publicAccessCidrs
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: metadata.annotations[crossplane.io/external-name]
+          toFieldPath: metadata.annotations[crossplane.io/external-name]
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: spec.parameters.version
+          toFieldPath: spec.forProvider.version
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: spec.writeConnectionSecretToRef.namespace
+          toFieldPath: spec.writeConnectionSecretToRef.namespace
+          type: FromCompositeFieldPath
+
+        - fromFieldPath: spec.parameters.writeConnectionSecretToRef.name
+          toFieldPath: spec.writeConnectionSecretToRef.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-ekscluster"
+                type: Format
+          type: FromCompositeFieldPath
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: status.clusterName
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.status
+          toFieldPath: status.controlPlaneStatus
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.identity.oidc.issuer
+          toFieldPath: status.eks.oidc
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.identity.oidc.issuer
+          toFieldPath: status.eks.iamoidc
+          transforms:
+            - type: string
+              string:
+                type: TrimPrefix
+                trim: 'https://'
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.endpoint
+          toFieldPath: status.eks.endpoint
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.version
+          toFieldPath: status.eks.version
+          policy:
+            fromFieldPath: Optional
+
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.status
+        matchString: ACTIVE
+      connectionDetails:
+        - fromConnectionSecretKey: kubeconfig
+
+    - name: eksnodegroup
+      base:
+        apiVersion: eks.aws.crossplane.io/v1alpha1
+        kind: NodeGroup
+        spec:
+          forProvider:
+            region: ap-southeast-2
+            capacityType: SPOT
+            clusterNameSelector:
+              matchControllerRef: true
+            nodeRoleSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+            subnetSelector:
+              matchLabels:
+                type: subnet
+                access: public
+                zone: ap-southeast-2a
+            scalingConfig:
+              minSize: 1
+              maxSize: 5
+              desiredSize: 1
+            instanceTypes:
+              - t3.medium
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.subnetSelector.matchLabels[networks.aws.demo.com/network-id]
+          type: FromCompositeFieldPath
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.status
+          toFieldPath: status.nodePoolStatus
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.status
+        matchString: ACTIVE
+
+    - name: iamrole-controlplane
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: Role
+        metadata:
+          labels:
+            role: controlplane
+        spec:
+          forProvider:
+            assumeRolePolicyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "eks.amazonaws.com"
+                            ]
+                        },
+                        "Action": [
+                            "sts:AssumeRole"
+                        ]
+                    }
+                ]
+              }
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-controlplane-role"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: iamrole-nodegroup
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: Role
+        metadata:
+          labels:
+            role: nodegroup
+        spec:
+          forProvider:
+            assumeRolePolicyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "ec2.amazonaws.com"
+                            ]
+                        },
+                        "Action": [
+                            "sts:AssumeRole"
+                        ]
+                    }
+                ]
+              }
+            tags:
+              - key: Name
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+            strategy: string
+            string:
+              fmt: "%s-nodegroup-role"
+          toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+    - name: iamattachment-controlplane
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: controlplane
+
+    - name: iamattachment-service
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: controlplane
+
+    - name: iamattachment-worker
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+
+    - name: iamattachment-cni
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+
+    - name: iamattachment-registry
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+
+    - name: iamattachment-ssm
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: RolePolicyAttachment
+        spec:
+          forProvider:
+            policyArn: arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+            roleNameSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+
+    - base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: OpenIDConnectProvider
+        spec:
+          forProvider:
+            clientIDList:
+              - sts.amazonaws.com
+            thumbprintList:
+              - "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
+      name: oidcProvider
+      patches:
+        - fromFieldPath: status.eks.oidc
+          toFieldPath: spec.forProvider.url
+          policy:
+            fromFieldPath: Required
+          type: FromCompositeFieldPath
+
+    # - name: iamrole-fargateprofile
+    #   base:
+    #     apiVersion: iam.aws.crossplane.io/v1beta1
+    #     kind: Role
+    #     spec:
+    #       forProvider:
+    #         assumeRolePolicyDocument: |
+    #           {
+    #             "Version": "2012-10-17",
+    #             "Statement": [
+    #                 {
+    #                     "Effect": "Allow",
+    #                     "Principal": {
+    #                         "Service": [
+    #                             "eks-fargate-pods.amazonaws.com"
+    #                         ]
+    #                     },
+    #                     "Action": [
+    #                         "sts:AssumeRole"
+    #                     ]
+    #                 }
+    #             ]
+    #           }
+    #   patches:
+    #   - fromFieldPath: spec.id
+    #     toFieldPath: metadata.name
+    #     transforms:
+    #     - type: string
+    #       string:
+    #         fmt: "%s-fargateprofile"
+    #         type: Format
+    #     type: FromCompositeFieldPath
+    #
+    #   - fromFieldPath: spec.id
+    #     toFieldPath: metadata.labels.role
+    #     transforms:
+    #     - type: string
+    #       string:
+    #         fmt: "%s-fargateprofile"
+    #         type: Format
+    #     type: FromCompositeFieldPath
+    #
+    # - name:  iamrolepolicy-fp
+    #   base:
+    #     apiVersion: iam.aws.crossplane.io/v1beta1
+    #     kind: RolePolicyAttachment
+    #     spec:
+    #       forProvider:
+    #         policyArn: arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy
+    #         roleNameSelector:
+    #           matchControllerRef: true
+    #   patches:
+    #   - fromFieldPath: spec.id
+    #     toFieldPath: metadata.name
+    #     transforms:
+    #     - type: string
+    #       string:
+    #         fmt: "%s-fp"
+    #         type: Format
+    #     type: FromCompositeFieldPath
+    #
+    #   - fromFieldPath: spec.id
+    #     toFieldPath: spec.forProvider.roleNameSelector.matchLabels.role
+    #     transforms:
+    #     - type: string
+    #       string:
+    #         fmt: "%s-fargateprofile"
+    #         type: Format
+    #     type: FromCompositeFieldPath
+
+    # - name: eksfargate-karpenter
+    #   base:
+    #     apiVersion: eks.aws.crossplane.io/v1beta1
+    #     kind: FargateProfile
+    #     spec:
+    #       forProvider:
+    #         region: ap-southeast-2
+    #         clusterNameSelector:
+    #           matchControllerRef: true
+    #         podExecutionRoleArnSelector:
+    #           matchControllerRef: true
+    #         subnetSelector:
+    #           matchLabels:
+    #             access: private
+    #         selectors:
+    #           - namespace: karpenter
+    #   patches:
+    #     - fromFieldPath: spec.id
+    #       toFieldPath: spec.forProvider.subnetSelector.matchLabels[networks.aws.demo.com/network-id]
+    #       type: FromCompositeFieldPath
+    #
+    #     - fromFieldPath: spec.id
+    #       toFieldPath: metadata.name
+    #       type: FromCompositeFieldPath
+    #
+    #     - fromFieldPath: spec.id
+    #       toFieldPath: spec.forProvider.podExecutionRoleArnSelector.matchLabels.role
+    #       transforms:
+    #         - type: string
+    #           string:
+    #             fmt: "%s-fargateprofile"
+    #             type: Format
+    #       type: FromCompositeFieldPath
+    #
+    #     - type: ToCompositeFieldPath
+    #       fromFieldPath: status.atProvider.status
+    #       toFieldPath: status.eks.karpenterFargateProfileStatus
+    #
+    #   readinessChecks:
+    #   - type: MatchString
+    #     fieldPath: status.atProvider.status
+    #     matchString: ACTIVE
+
+    # - name: eksfargate-coredns
+    #   base:
+    #     apiVersion: eks.aws.crossplane.io/v1beta1
+    #     kind: FargateProfile
+    #     spec:
+    #       forProvider:
+    #         region: ap-southeast-2
+    #         clusterNameSelector:
+    #           matchControllerRef: true
+    #         podExecutionRoleArnSelector:
+    #           matchControllerRef: true
+    #         subnetSelector:
+    #           matchLabels:
+    #             access: private
+    #         selectors:
+    #           - namespace: kube-system
+    #             labels:
+    #               k8s-app: kube-dns
+    #   patches:
+    #   - fromFieldPath: spec.id
+    #     toFieldPath: metadata.name
+    #     transforms:
+    #       - type: string
+    #         string:
+    #           fmt: "%s-coredns"
+    #           type: Format
+    #     type: FromCompositeFieldPath
+    #   - fromFieldPath: spec.id
+    #     toFieldPath: spec.forProvider.podExecutionRoleArnSelector.matchLabels.role
+    #     transforms:
+    #       - type: string
+    #         string:
+    #           fmt: "%s-fargateprofile"
+    #           type: Format
+    #     type: FromCompositeFieldPath
+    #
+    #   - type: ToCompositeFieldPath
+    #     fromFieldPath: status.atProvider.status
+    #     toFieldPath: status.eks.karpenterFargateProfileStatus
+    #
+    #   readinessChecks:
+    #   - type: MatchString
+    #     fieldPath: status.atProvider.status
+    #     matchString: ACTIVE

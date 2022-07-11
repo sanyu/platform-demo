@@ -1,0 +1,83 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xclusters.aws.demo.com
+spec:
+  group: aws.demo.com
+  names:
+    kind: XCluster
+    plural: xclusters
+  claimNames:
+    kind: Cluster
+    plural: clusters
+
+  connectionSecretKeys:
+    - kubeconfig
+
+  # defaultCompositionRef:
+  #   name: eks-cluster
+
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              id:
+                type: string
+                description: ID of this Cluster that other objects will use to refer to it.
+              parameters:
+                type: object
+                properties:
+                  region:
+                    description: AWS region for this cluster
+                    type: string
+                  version:
+                    description: The Kubernetes version for the cluster.
+                    type: string
+                  email:
+                    description: LetsEncrypt email
+                    type: string
+                  domain:
+                    description: Route53 domain
+                    type: string
+                  sourceCidrs:
+                    description: CIDR block allowed to access the public API server endpoint
+                    type: array
+                    items:
+                      type: string
+            required:
+              - id
+              - parameters
+          status:
+            type: object
+            properties:
+              clusterName:
+                description: The name of the cluster
+                type: string
+              controlPlaneStatus:
+                description: The status of the control plane
+                type: string
+              nodePoolStatus:
+                description: The status of the node pool
+                type: string
+              eks:
+                description: Freeform field containing status information for eks
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+    additionalPrinterColumns:
+    - name: clusterName
+      type: string
+      jsonPath: ".status.clusterName"
+    - name: controlPlane
+      type: string
+      jsonPath: ".status.controlPlaneStatus"
+    - name: nodePool
+      type: string
+      jsonPath: ".status.nodePoolStatus"
+

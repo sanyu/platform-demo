@@ -1,0 +1,67 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xservices.bootstrap.demo.com
+spec:
+  group: bootstrap.demo.com
+  names:
+    kind: XServices
+    plural: xservices
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              id:
+                type: string
+                description: ID of this Cluster that other objects will use to refer to it.
+              accountID:
+                type: string
+                description: "AWS Account ID"
+
+              services:
+                type: object
+                description: Configuration for Helm Charts.
+                properties:
+                  argocd:
+                    type: object
+                    description: Configuration for ArgoCD.
+                    properties:
+                      version:
+                        type: string
+                        description: ArgoCD version to run.
+
+              parameters:
+                type: object
+                properties:
+                  email:
+                    description: LetsEncrypt email
+                    type: string
+                  domain:
+                    description: Route53 domain
+                    type: string
+
+              providerConfigRef:
+                type: object
+                description: "A reference to the ProviderConfig of the cluster
+                  that services should be deployed to."
+                properties:
+                  name:
+                    type: string
+                    description: "Name of the Kubernetes provider configuration."
+                required:
+                - name
+
+              eks:
+                description: Freeform field containing information for EKS
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+
+            required:
+            - providerConfigRef

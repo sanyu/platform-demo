@@ -10,8 +10,16 @@ spec:
   project: platform-demo
   source:
     chart: vela-core
-    repoURL:  https://charts.kubevela.net/core
-    targetRevision: "1.4.5"
+    repoURL: https://sanyu.github.io/helm-charts/
+    targetRevision: "1.4.6"
+    helm:
+      parameters:
+        - name: multicluster.clusterGateway.secureTLS.certManager.enabled
+          value: "true"
+        - name: multicluster.metrics.enabled
+          value: "true"
+        - name: multicluster.clusterGateway.secureTLS.certManager.enabled
+          value: "true"
   destination:
     namespace: vela-system
     server: https://kubernetes.default.svc
@@ -22,3 +30,8 @@ spec:
       allowEmpty: true
     syncOptions:
     - CreateNamespace=true
+  ignoreDifferences:
+  - group: apiregistration.k8s.io
+    kind: APIService
+    jsonPointers:
+    - /spec/caBundle

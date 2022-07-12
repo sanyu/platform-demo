@@ -6,7 +6,6 @@ resources:
   - ../../base
   - ingress.yaml
 
-
 patches:
 
   - target:
@@ -32,3 +31,4 @@ patchesStrategicMerge:
   - server.yaml
   - repo-server.yaml
   - delete-np.yaml
+  - argocd-cm.yaml

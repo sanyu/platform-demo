@@ -238,6 +238,45 @@ spec:
           policy:
             fromFieldPath: Required
 
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.roleID
+          toFieldPath: status.eks.nodeGroupRoleID
+          policy:
+            fromFieldPath: Optional
+
+    - name: instance-profile-karpenter
+      base:
+        apiVersion: iam.aws.crossplane.io/v1alpha1
+        kind: InstanceProfile
+        spec:
+          forProvider:
+            roleSelector:
+              matchControllerRef: true
+              matchLabels:
+                role: nodegroup
+      patches:
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "karpenter-node-%s"
+              type: Format
+          type: FromCompositeFieldPath
+        # Wait for role to be created before creating the instaneprofile
+        # See but listed below
+        - fromFieldPath: "status.eks.nodeGroupRoleID"
+          toFieldPath: "metadata.labels[nodeGroupRoleID]"
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
+      # Workaround for https://github.com/crossplane-contrib/provider-aws/issues/1371
+      readinessChecks:
+        - type: NonEmpty
+          fieldPath: "status.atProvider.roles[0].roleID"
+
+
     - name: iamattachment-controlplane
       base:
         apiVersion: iam.aws.crossplane.io/v1beta1

@@ -48,9 +48,13 @@ spec:
 
         - fromFieldPath: status.eks.endpoint
           toFieldPath: spec.eks.endpoint
+          policy:
+            fromFieldPath: Required
 
         - fromFieldPath: status.eks.iamoidc
           toFieldPath: spec.eks.iamoidc
+          policy:
+            fromFieldPath: Required
 
         - fromFieldPath: metadata.labels[tags.crossplane.io/account]
           toFieldPath: spec.accountID

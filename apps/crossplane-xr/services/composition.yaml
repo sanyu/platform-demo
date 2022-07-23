@@ -748,25 +748,6 @@ spec:
         - type: PatchSet
           patchSetName: irsa-config
 
-    - name: instance-profile-karpenter
-      base:
-        apiVersion: iam.aws.crossplane.io/v1alpha1
-        kind: InstanceProfile
-        spec:
-          forProvider:
-            roleSelector:
-              matchLabels:
-                role: nodegroup
-      patches:
-        - fromFieldPath: spec.id
-          toFieldPath: metadata.name
-          transforms:
-          - type: string
-            string:
-              fmt: "karpenter-node-%s"
-              type: Format
-          type: FromCompositeFieldPath
-
     - name: irsa-karpenter
       base:
         apiVersion: iam.demo.com/v1alpha1

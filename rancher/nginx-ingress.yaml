@@ -11,7 +11,17 @@ spec:
   source:
     chart: ingress-nginx
     repoURL:  https://kubernetes.github.io/ingress-nginx
-    targetRevision: "4.1.4"
+    targetRevision: "4.2.1"
+    helm:
+      parameters:
+        - name: controller.metrics.enabled
+          value: "true"
+        - name: controller.metrics.service.annotations.prometheus\.io\/scrape
+          value: "true"
+          forceString: true
+        - name: controller.metrics.service.annotations.prometheus\.io\/port
+          value: "10254"
+          forceString: true
   destination:
     namespace: ingress-nginx
     server: https://kubernetes.default.svc

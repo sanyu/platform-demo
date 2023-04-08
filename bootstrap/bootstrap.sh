@@ -13,7 +13,7 @@ DOMAIN=local
 # Install Nginx Ingress
 helm upgrade --install ingress-nginx ingress-nginx \
   --repo https://kubernetes.github.io/ingress-nginx \
-  --version 4.1.4 \
+  --version 4.6.0 \
   --namespace ingress-nginx --create-namespace --wait
 
 kubectl apply -k ../apps/argo-cd/overlays/rancher

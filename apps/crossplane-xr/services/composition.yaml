@@ -618,9 +618,10 @@ spec:
               repository: https://kubernetes-sigs.github.io/aws-ebs-csi-driver
               version: "2.17.2"
             values:
-              serviceAccount:
-                name: ebs-csi-node
-                annotations: {}
+              controller:
+                serviceAccount:
+                  name: ebs-csi-node
+                  annotations: {}
       patches:
         - type: PatchSet
           patchSetName: helm-config
@@ -640,7 +641,7 @@ spec:
               - fromFieldPath: spec.id
             strategy: string
             string:
-              fmt: "arn:aws:iam::%s:role/ebs-csi-driver-%s"
+              fmt: "arn:aws:iam::%s:role/ebs-csi-node-%s"
           toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
 
     #TODO: move external-dns out of here

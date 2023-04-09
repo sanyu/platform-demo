@@ -642,7 +642,7 @@ spec:
             strategy: string
             string:
               fmt: "arn:aws:iam::%s:role/ebs-csi-node-%s"
-          toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
+          toFieldPath: "spec.forProvider.values.controller.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
 
     #TODO: move external-dns out of here
     - name: external-dns

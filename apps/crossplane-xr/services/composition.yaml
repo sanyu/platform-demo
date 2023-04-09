@@ -605,6 +605,44 @@ spec:
           policy:
             fromFieldPath: Required
 
+    - name: ebs-csi-driver
+      base:
+        apiVersion: helm.crossplane.io/v1beta1
+        kind: Release
+        spec:
+          rollbackLimit: 3
+          forProvider:
+            namespace: kube-system
+            chart:
+              name: aws-ebs-csi-driver
+              repository: https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+              version: "2.17.2"
+            values:
+              serviceAccount:
+                name: ebs-csi-node
+                annotations: {}
+      patches:
+        - type: PatchSet
+          patchSetName: helm-config
+
+        # - fromFieldPath: spec.parameters.sourceCidrs
+        #   toFieldPath: spec.forProvider.values.controller.service.loadBalancerSourceRanges
+        #   type: FromCompositeFieldPath
+        - fromFieldPath: spec.eks.endpoint
+          toFieldPath: spec.forProvider.values.clusterEndpoint
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.accountID
+              - fromFieldPath: spec.id
+            strategy: string
+            string:
+              fmt: "arn:aws:iam::%s:role/ebs-csi-driver-%s"
+          toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
+
     #TODO: move external-dns out of here
     - name: external-dns
       base:
@@ -649,6 +687,153 @@ spec:
               fmt: "arn:aws:iam::%s:role/external-dns-%s"
           toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
 
+
+    - name: irsa-ebs-csi-driver
+      base:
+        apiVersion: iam.demo.com/v1alpha1
+        kind: XIamRoleForServiceAccount
+        spec:
+          parameters:
+            serviceAccountName: ebs-csi-node
+            namespace: kube-system
+            policyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:CreateSnapshot",
+                      "ec2:AttachVolume",
+                      "ec2:DetachVolume",
+                      "ec2:ModifyVolume",
+                      "ec2:DescribeAvailabilityZones",
+                      "ec2:DescribeInstances",
+                      "ec2:DescribeSnapshots",
+                      "ec2:DescribeTags",
+                      "ec2:DescribeVolumes",
+                      "ec2:DescribeVolumesModifications"
+                    ],
+                    "Resource": "*"
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:CreateTags"
+                    ],
+                    "Resource": [
+                      "arn:aws:ec2:*:*:volume/*",
+                      "arn:aws:ec2:*:*:snapshot/*"
+                    ],
+                    "Condition": {
+                      "StringEquals": {
+                        "ec2:CreateAction": [
+                          "CreateVolume",
+                          "CreateSnapshot"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:DeleteTags"
+                    ],
+                    "Resource": [
+                      "arn:aws:ec2:*:*:volume/*",
+                      "arn:aws:ec2:*:*:snapshot/*"
+                    ]
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:CreateVolume"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:RequestTag/ebs.csi.aws.com/cluster": "true"
+                      }
+                    }
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:CreateVolume"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "aws:RequestTag/CSIVolumeName": "*"
+                      }
+                    }
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:DeleteVolume"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "ec2:ResourceTag/ebs.csi.aws.com/cluster": "true"
+                      }
+                    }
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:DeleteVolume"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "ec2:ResourceTag/CSIVolumeName": "*"
+                      }
+                    }
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:DeleteVolume"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "ec2:ResourceTag/kubernetes.io/created-for/pvc/name": "*"
+                      }
+                    }
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:DeleteSnapshot"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "ec2:ResourceTag/CSIVolumeSnapshotName": "*"
+                      }
+                    }
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ec2:DeleteSnapshot"
+                    ],
+                    "Resource": "*",
+                    "Condition": {
+                      "StringLike": {
+                        "ec2:ResourceTag/ebs.csi.aws.com/cluster": "true"
+                      }
+                    }
+                  }
+                ]
+              }
+
+      patches:
+        - type: PatchSet
+          patchSetName: irsa-config
 
     - name: irsa-k8s-image-swapper
       base:
@@ -703,6 +888,7 @@ spec:
                         "arn:aws:ecr:*:%s:repository/quay.io/*",
                         "arn:aws:ecr:*:%s:repository/ghcr.io/*",
                         "arn:aws:ecr:*:%s:repository/k8s.gcr.io/*"
+                        "arn:aws:ecr:*:%s:repository/registry.k8s.io/*"
                       ]
                     }
                   ]

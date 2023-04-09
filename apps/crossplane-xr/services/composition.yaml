@@ -887,7 +887,7 @@ spec:
                         "arn:aws:ecr:*:%s:repository/docker.io/*",
                         "arn:aws:ecr:*:%s:repository/quay.io/*",
                         "arn:aws:ecr:*:%s:repository/ghcr.io/*",
-                        "arn:aws:ecr:*:%s:repository/k8s.gcr.io/*"
+                        "arn:aws:ecr:*:%s:repository/k8s.gcr.io/*",
                         "arn:aws:ecr:*:%s:repository/registry.k8s.io/*"
                       ]
                     }

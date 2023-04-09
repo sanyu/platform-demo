@@ -539,6 +539,14 @@ spec:
           policy:
             fromFieldPath: Required
 
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "helm-argocd-%s"
+              type: Format
+
     - name: bootstrap
       base:
         apiVersion: helm.crossplane.io/v1beta1
@@ -568,6 +576,14 @@ spec:
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "helm-bootstrap-%s"
+              type: Format
 
     # Don't move this to ArgoCD so that we can delete the NLB when
     # destroying the cluster
@@ -605,6 +621,14 @@ spec:
           policy:
             fromFieldPath: Required
 
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "helm-ingress-nginx-%s"
+              type: Format
+
     - name: ebs-csi-driver
       base:
         apiVersion: helm.crossplane.io/v1beta1
@@ -634,6 +658,7 @@ spec:
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
+
         - type: CombineFromComposite
           combine:
             variables:
@@ -643,6 +668,14 @@ spec:
             string:
               fmt: "arn:aws:iam::%s:role/ebs-csi-node-%s"
           toFieldPath: "spec.forProvider.values.controller.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
+
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "helm-ingress-ebs-csi-driver-%s"
+              type: Format
 
     #TODO: move external-dns out of here
     - name: external-dns
@@ -687,6 +720,14 @@ spec:
             string:
               fmt: "arn:aws:iam::%s:role/external-dns-%s"
           toFieldPath: "spec.forProvider.values.serviceAccount.annotations[eks.amazonaws.com/role-arn]"
+
+        - fromFieldPath: spec.id
+          toFieldPath: metadata.name
+          transforms:
+          - type: string
+            string:
+              fmt: "helm-external-dns-%s"
+              type: Format
 
 
     - name: irsa-ebs-csi-driver

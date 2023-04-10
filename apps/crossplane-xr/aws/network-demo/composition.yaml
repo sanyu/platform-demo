@@ -72,7 +72,7 @@ spec:
             vpcIdSelector:
               matchControllerRef: true
             tags:
-              - key: karpenter.sh/discovery:
+              - key: karpenter.sh/discovery
                 value: cluster
             egress:
             - fromPort: null
@@ -110,7 +110,7 @@ spec:
             tags:
               - key: Name
               - value: shared
-              - key: karpenter.sh/discovery:
+              - key: karpenter.sh/discovery
                 value: cluster
               - key: access
                 value: private
@@ -168,7 +168,7 @@ spec:
             tags:
               - key: Name
               - value: shared
-              - key: karpenter.sh/discovery:
+              - key: karpenter.sh/discovery
                 value: cluster
               - key: access
                 value: private
@@ -224,7 +224,7 @@ spec:
               - key: Name
               - key: access
                 value: public
-              - key: karpenter.sh/discovery:
+              - key: karpenter.sh/discovery
                 value: cluster
               - key: kubernetes.io/role/elb
                 value: "1"
@@ -270,7 +270,7 @@ spec:
               - key: Name
               - key: access
                 value: public
-              - key: karpenter.sh/discovery:
+              - key: karpenter.sh/discovery
                 value: cluster
               - key: kubernetes.io/role/elb
                 value: "1"

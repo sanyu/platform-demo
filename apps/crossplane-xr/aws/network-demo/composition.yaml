@@ -71,6 +71,9 @@ spec:
             region: ap-southeast-2
             vpcIdSelector:
               matchControllerRef: true
+            tags:
+              - key: karpenter.sh/discovery:
+                value: cluster
             egress:
             - fromPort: null
               toPort: null
@@ -80,6 +83,12 @@ spec:
       patches:
         - type: PatchSet
           patchSetName: network-id
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.tags[0].key
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
 
     - name: nodes-subnets-2a
       base:
@@ -101,6 +110,8 @@ spec:
             tags:
               - key: Name
               - value: shared
+              - key: karpenter.sh/discovery:
+                value: cluster
               - key: access
                 value: private
               - key: kubernetes.io/role/internal-elb
@@ -131,6 +142,12 @@ spec:
           policy:
             fromFieldPath: Required
 
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.tags[2].key
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
+
     - name: nodes-subnets-2b
       base:
         apiVersion: ec2.aws.crossplane.io/v1beta1
@@ -151,6 +168,8 @@ spec:
             tags:
               - key: Name
               - value: shared
+              - key: karpenter.sh/discovery:
+                value: cluster
               - key: access
                 value: private
               - key: kubernetes.io/role/internal-elb
@@ -178,6 +197,11 @@ spec:
           type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.tags[2].key
+          type: FromCompositeFieldPath
+          policy:
+            fromFieldPath: Required
 
     - name: nodes-subnets-public-2a
       base:
@@ -200,6 +224,8 @@ spec:
               - key: Name
               - key: access
                 value: public
+              - key: karpenter.sh/discovery:
+                value: cluster
               - key: kubernetes.io/role/elb
                 value: "1"
       patches:
@@ -214,6 +240,12 @@ spec:
             string:
               fmt: "%s-public-2a"
           toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.tags[2].key
+          type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
 
@@ -238,6 +270,8 @@ spec:
               - key: Name
               - key: access
                 value: public
+              - key: karpenter.sh/discovery:
+                value: cluster
               - key: kubernetes.io/role/elb
                 value: "1"
       patches:
@@ -252,6 +286,12 @@ spec:
             string:
               fmt: "%s-public-2b"
           toFieldPath: spec.forProvider.tags[0].value
+          policy:
+            fromFieldPath: Required
+
+        - fromFieldPath: spec.id
+          toFieldPath: spec.forProvider.tags[2].key
+          type: FromCompositeFieldPath
           policy:
             fromFieldPath: Required
 

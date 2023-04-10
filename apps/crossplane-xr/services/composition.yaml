@@ -923,7 +923,8 @@ spec:
                         "ecr:CreateRepository",
                         "ecr:CompleteLayerUpload",
                         "ecr:BatchGetImage",
-                        "ecr:BatchCheckLayerAvailability"
+                        "ecr:BatchCheckLayerAvailability",
+                        "ecr:GetAuthorizationToken"
                       ],
                       "Resource": [
                         "arn:aws:ecr:*:%s:repository/docker.io/*",
